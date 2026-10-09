@@ -1,53 +1,268 @@
-# DECICAT — A Decibel Adventure
+# DECICAT
 
-A one-touch pixel runner: 10 stages, a rocket ending, then endless Moon Mode. Original Decicat concept by @doncastro. Game by @angelataptos.
+A one-touch pixel-art runner. Hop across candlestick charts, stomp bears, outsmart a boss, and ride a rocket to the moon.
 
-**Live:** https://decicat.bitcade.xyz/play (canonical; https://decicat.decicat.workers.dev/play keeps working).
+**[Play it in your browser](https://decicat.bitcade.xyz/play)**
 
-**Play:** open `dist/decicat.html` (one self-contained file, works offline from disk) or `index.html`.
+![DECICAT title screen](docs/screenshots/title.png)
 
-**Controls:** tap / click / Space = jump. Hold for a higher jump, tap again in the air to double-jump. Land on a bear from above to stomp it. M = mute, P = pause. The ♪ and speaker icons (top right) toggle music and sound effects separately; the setting is remembered.
+## Credits
 
-**Stages (45 s each, `ZONE_SECONDS` in game.js; gentle in-stage ramp, one 40x box per stage):** 1 Order Book · 2 Funding Storm (wind gusts, rain) · 3 Liquidation Rain (red candles drop from the sky) · 4 Bear Market (bears) · 5 Whale Waters (candle sea; ride breaching whales, jump off when they spout and dive) · 6 Short Squeeze (hydraulic bars slam down over pressure tunnels; stay low under them) · 7 Flash Crash (gravity flips for 2-4 s after a 1 s glitch + arrow warning; run on hanging candles) · 8 Front-Runner Alley (server-room data alley; dark bot Decicats replay your own path ~0.6-1.0 s late, then lock onto your lane, shown by a red dotted line, and cut past you. They only trip you while you're on the ground on their lane: be in the air as one passes (OUTRAN +50), or land on one to stomp it) · 9 Bear King (storm castle of red charts; boss with crown and red-candle sceptre. He throws red candles (raised sceptre + "!"), slams the floor (hop, then a shockwave runs at you), and lunges (red lane flash, then his head comes in low). Stomp his head 3 times while he lunges: health bar in the HUD, defeat = he flees + 5000; survive the stage = he retreats + 1000) · 10 Launch Pad (dawn facility, gantries, live countdown boards, bears; the last 7 s are a flat steel pad with the rocket waiting at the end).
-**Ending:** finishing stage 10 plays a ~12.6 s rocket cutscene (board, 3-2-1, liftoff, flight through the To The Moon sky, landing on the big Decibel moon: TRADE LOUD. + fireworks; tap to skip). Then YOU MADE IT TO THE MOON! (run time, score, +10000 ending bonus), then **Moon Mode**: endless, the hardest, low gravity, meteors, a mix of every hazard, cycling remixes of the stage tracks. The cutscene is frozen sim time, so replays stay deterministic. Each stage has its own original track and SFX.
-**Trophies & skins:** 14 achievements (stored on the device, toast on unlock, TROPHIES button on the title). Some unlock cosmetic skins (palette edits of the traced sprite): Night (Storm Chaser), Hoodie (Whale Rider), Gold (Full Send), Laser Eyes (Kingslayer), Astronaut (To The Moon). Pick with the arrows beside the cat on the title.
-**Share:** SHARE ON X on the game-over screen opens x.com/intent/post with your time, stage (or Moon Mode), board rank and https://decicat.bitcade.xyz/play. Leaderboard rows that reached the moon get a small moon icon.
-Grab the gold **40x** box for a 4-second invincible rocket boost.
-**Power-ups** (rare, at most one of each per zone): STOP-LOSS (blocks one hit or fall), LIQUIDITY MAGNET (6 s), LIMIT ORDER (slow-mo 0.6x for 4 s), DIAMOND PAWS (invincible 3 s). Active ones show under the score with a timer bar.
-The BTC number in the HUD is just for fun. It isn't a real price.
+Original Decicat concept by [@doncastro](https://x.com/doncastro).
+Game by [@angelataptos](https://x.com/angelataptos).
 
-## v5.4 (anonymous player counter)
-- **Privacy-first player count:** to know how many people enjoy the game, it keeps a simple anonymous count of players per day. Each browser gets a random ID (`decicat_pid_v1` in localStorage) that isn't linked to your name, device, X account or anything else about you. Once per visit the game sends just that random ID and whether a run started. No cookies, nothing slows down gameplay, and it's skipped in local copies and test modes (or add `?noping`).
-- The server never stores the ID itself, only a salted one-way hash, so even the count can't be traced back to a browser. No IP addresses, names or device details are saved. Rate limiting uses a short-lived salted hash that's deleted after about 2 minutes. The counter is fully separate from the leaderboard, so it can never affect scores or gameplay.
-- `GET /api/admin/stats?days=30` (x-admin-key) and `node tools/stats.mjs` print per-day unique players / loads / runs, all-time uniques and score totals. (The old sim-stats probe moved to `tools/simstats.mjs`.)
-- VERSION v5.4 uses the v5.3 physics, so all v5.2/v5.3 replays still verify.
+## How to play
 
-## v5.3 (game feel)
-- Jump physics (sim, versioned): coyote time 80 ms, jump buffer 100 ms, fall gravity x1.18, gravity x0.6 near the apex (|vy| < 35). Max jump height and air time stay within ~1.5% of v5.2, so gap reach is unchanged.
-- Replays are versioned: the sim picks its physics table from the replay's `v` (`PHYS.v52` for v5.2 and older, `PHYS.v53` for v5.3+), so v5.2 replays still verify exactly on this build. A v5.3 replay will NOT verify on a v5.2 build (expected).
-- Juice (render-only; uses Math.random, never the seeded sim RNG; nothing spawns while re-simulating): squash/stretch on takeoff and landing, landing/takeoff dust, coin ring pop + sparkles, power-up screen flash, impact rings, screen shake on stomps, boss hits and death.
-- Hit-stop: 60 ms on bear stomps, 70 ms on boss stomps, 80 ms on death. It lives in the real-time loop only (no sim steps run during the freeze; inputs are stamped with the sim frame they apply to), so replays are unaffected.
-- `prefers-reduced-motion: reduce` scales shake to 30% and softens the flash.
-- Test hook: `__decicat.advanceReal(n)` advances like the real loop (honours hit-stop); `__decicat.juice`, `__decicat.physFor(v)`.
+Decicat runs on its own. Your only job is to jump.
 
-## v5.2
-Title wordmark: DECI yellow, CAT white. TAP TO START gate: the cratered Decibel logo-moon (stage moon renderer, 1:1 mark) top-right, below the sound toggles. First run only (`decicat_hint_v1` in localStorage): a ~3 s controls hint (jump / hold for higher / tap again in the air for a double jump), drawn only, never touches the sim. Decicat's raised paw redrawn as the thinking pose (curled paw, index finger bent to the chin), all frames and skins; `server/card.png` regenerated. Score-code popup: "THIS CODE PROVES YOUR HIGH SCORE", every line measured and wrapped to the box. Stage logo-moons ping-pong slowly inside the visible width (no more drifting off narrow portrait screens). Audio: SFX reverb/delay sends and the growl/roar chains are disconnected when they end, no SFX nodes are built while SFX is muted, and the silent looping `<audio>` keep-alive is only used on iOS/iPadOS.
+| Input | Action |
+| --- | --- |
+| Tap, click, Space, Up arrow, W or Enter | Jump |
+| Hold the jump | Jump higher |
+| Tap again in mid-air | Double jump |
+| M | Mute or unmute everything |
+| P or Esc | Pause |
 
-## Files
-- `index.html`, `config.js`, `sprites.js`, `audio.js`, `bg.js`, `game.js`: the game (no build step needed). `audio.js` synthesises all music and SFX live with WebAudio (no audio files; each song builds one persistent voice graph and plays notes by AudioParam automation, so it doesn't churn nodes); `bg.js` draws the parallax zone backgrounds and the pixel Decibel logo/moons (48 px mark traced from the official logo).
-- `build.mjs`: `node build.mjs` writes `dist/decicat.html` (everything inlined)
-- `server/`: Cloudflare Worker + SQLite Durable Object leaderboard and X player-card pages (`/play`, `/embed`, `/card.png`, `/api/top`, `/api/score`). Deploy: `node build.mjs && cd server && npx wrangler deploy`.
+The two icons in the top-right corner switch music and sound effects on and off separately, and the game remembers your choice. It also pauses itself when you switch tabs.
 
-## Leaderboard
-Hosted copies (the Worker's `/embed`, or any http(s) host other than localhost) use the online top 20; a `file://` or localhost copy keeps scores on the device. Scores live in one Durable Object (SQLite), so every score is stored and ranks are exact (`You placed #37`). The client queues each score in localStorage before sending, retries with backoff (8 s timeout), and resends anything left over on the next load or game over. Resends are idempotent (nonce). Runs under 2 s are stored but not ranked. Rate limit: 30 posts/min per IP.
+Green candles are safe to stand on. Red candles hurt, but brushing past one earns a close-call bonus. Land on a bear from above to stomp it and bounce off its head. Fall into a gap and the run is over.
 
-## Contest protection (no sign-in)
-The simulation is deterministic: fixed 60 Hz steps, one seeded RNG (run seed from `crypto.getRandomValues`), and inputs applied only at step boundaries. Every run records `{seed, size, delta-encoded press/release frames, resizes}` (a few hundred bytes) and submits it with the score. The Worker keeps the replay only while the run is in the top 50. A top-20 run gets a private claim code (`DCAT-XXXX-XX`, an HMAC of the entry id). The Worker stores only its SHA-256. The code is shown once ("Screenshot this!") and kept in the player's localStorage (`decicat_claims_v1`). Runs recorded with debug flags (`?bot`, `?god`, `?zt`...) are stored but not ranked. Older entries without a replay are listed as unverified.
-`tools/verify.mjs` (needs the `ADMIN_KEY` secret, read from `/workspace/decicat/.admin_key`; default host decicat.bitcade.xyz): `list`, `entry <rank|id> [--save 1]` (fetches the replay, re-simulates it headlessly with `dist/decicat.html`, prints computed vs claimed and whether the replay reached the moon; `--save 1` stores verified + reachedMoon on the server), `all [--save 1]`, `claim <code> [rank|id]`, `file <replay.json>`. The admin API (`/api/admin/entries`, `/api/admin/entry`, `POST /api/admin/verify`) needs the `x-admin-key` header. The moon icon shows the client's claim (only accepted for runs of 7m20s+) until a verify replaces it with the replay-derived value.
+Your score is the distance you cover plus everything you pick up along the way: coins, power-ups, stomps, whale rides and boss bonuses. The BTC number in the corner of the screen is just for fun. It isn't a real price.
 
-## Debug URL params
-`?zone=3` start in a stage (11+ = Moon Mode) · `?boost` start boosted · `?bot` autoplay · `?god` no deaths · `?seed=7` repeatable level · `?zt=6` seconds per zone · `?autostart` · `?poster` static title card · `?nogate` skip the TAP TO START gate · `?record` log audio events instead of playing them (used for video capture) · `?mem` memory/audio overlay (canvas count + area, cache sizes, live audio nodes, JS heap)
+## The 10 stages
 
-Original Decicat concept by @doncastro. Game by @angelataptos.
+Each stage lasts 45 seconds and gets a little harder from start to finish. Every stage has its own scenery and its own music.
 
-Tests (from `tools/`, Chrome via playwright-core): `test3.mjs` (UI/regression), `test5.mjs` (v5 features), `replaytest.mjs` (determinism: `ZT=8`, `Z0=8 ZT=8`, includes ending runs), `lbtest.mjs` / `e2e_online.mjs` / `contest_e2e.mjs` (against `wrangler dev --local --port 8787 --var DEV:1`), `mem2.mjs` (memory soak).
+![All ten stages](docs/screenshots/stages_grid.png)
+
+| # | Stage | What to expect |
+| --- | --- | --- |
+| 1 | Order Book | A calm night skyline to learn the jump. |
+| 2 | Funding Storm | Rain and wind gusts that push you around mid-jump. |
+| 3 | Liquidation Rain | Red candles drop out of the sky. |
+| 4 | Bear Market | Bears patrol the candles. Stomp them or jump over them. |
+| 5 | Whale Waters | A candle sea. Land on a breaching whale and ride it, then jump off when it spouts and dives. |
+| 6 | Short Squeeze | Pressure tunnels where a hydraulic bar slams down. Stay low to thread the gap. |
+| 7 | Flash Crash | After a glitch and an arrow warning, gravity flips for a few seconds and you run on the hanging candles. |
+| 8 | Front-Runner Alley | Dark bot Decicats copy your path a moment late, then lock onto your lane and cut past you. |
+| 9 | Bear King | A storm castle of red charts and a boss fight. |
+| 10 | Launch Pad | A dawn rocket facility with gantries, countdown boards and bears, ending on the steel pad where the rocket waits. |
+
+### Front-Runner Alley
+
+A red dotted line shows which lane a bot has locked onto. Bots can only trip you while you're on the ground in their lane, so be in the air as one passes (+50) or land on it to stomp it (+100).
+
+### The Bear King
+
+![The Bear King](docs/screenshots/bear_king.png)
+
+Stage 9 belongs to the Bear King, a crowned bear with a red-candle sceptre. Every attack is telegraphed:
+
+- He raises his sceptre and hurls red candles that land ahead of you.
+- He hops and slams the floor, sending a shockwave along the ground that you need to jump.
+- His lane flashes red and he lunges with his head low.
+
+The lunge is your opening. Land on his head three times to beat him. His health bar sits in the HUD. Beat him and he flees for +5000. If you simply survive the stage, he retreats and you get +1000.
+
+### The rocket ending
+
+Make it through stage 10 and Decicat boards the rocket. A short cutscene plays the countdown, the liftoff and the flight, and lands on the big Decibel moon with fireworks. You can tap to skip it. Then comes the "You made it to the Moon!" screen with your run time, your score and a +10000 bonus.
+
+| Liftoff | Landing |
+| --- | --- |
+| ![Rocket liftoff](docs/screenshots/ending_liftoff.png) | ![Landing on the Decibel moon](docs/screenshots/ending_landing.png) |
+
+### Moon Mode
+
+![Moon Mode](docs/screenshots/moon_mode.png)
+
+After the ending the run keeps going in Moon Mode. It is endless and the hardest part of the game: low gravity, falling meteors, and a rotating mix of hazards from the earlier stages that changes every lap while the speed creeps up. The music cycles through faster remixes of the stage tracks.
+
+## Power-ups
+
+Power-ups are rare. Each one appears at most once per stage, and active ones show under the score with a timer bar.
+
+| Power-up | Effect |
+| --- | --- |
+| Stop-Loss | Absorbs one hit, or bounces you back up from one fall. |
+| Liquidity Magnet | Pulls nearby coins to you for 6 seconds. |
+| Limit Order | Slows the whole game to 0.6x speed for 4 seconds. |
+| Diamond Paws | Makes you invincible for 3 seconds, falls included. |
+
+Each stage also hides one gold **40x** box. Grab it for a 4-second rocket boost that carries you over everything and smashes through red candles, bears and bots in your path.
+
+Coins are worth 100 points each and are scattered all over the stages.
+
+## Skins and trophies
+
+There are 14 trophies to earn, from your first jump to surviving a minute of Moon Mode. A toast pops up when you unlock one, and the Trophies button on the title screen lists them all.
+
+Five of them also unlock a skin for Decicat. Pick a skin with the arrows next to the cat on the title screen.
+
+![The six skins](docs/screenshots/skins.png)
+
+| Skin | Unlocked by |
+| --- | --- |
+| Classic | Available from the start |
+| Night | Storm Chaser: survive the Funding Storm |
+| Hoodie | Whale Rider: ride a whale |
+| Gold | Full Send: grab the 40x box five times in one run |
+| Laser Eyes | Kingslayer: beat the Bear King |
+| Astronaut | To The Moon: reach the moon |
+
+Trophies, skins, your best score and your display name are saved in your browser. There is no account.
+
+## Leaderboard and Score Codes
+
+The online leaderboard shows the global top 20. Every score is kept, so after each run you see your exact place, even if it's #37.
+
+There's no sign-in. You start with a random anonymous name like "Fuzzy Otter 493", or you can pick your own name of up to 16 letters and numbers with the Edit Name button. Offensive names are filtered out.
+
+If you finish in the top 5, you get a Score Code such as `DCAT-7K3Q-X9`. It is shown once, so take a screenshot. The code proves that the score is yours. Your browser also keeps a copy.
+
+![A Score Code](docs/screenshots/score_code.png)
+
+To keep the board honest, each run is recorded as a tiny log of when you pressed and released jump, together with the random seed that built the level. The game is fully deterministic, so playing that log back through the same code produces the exact same run and the exact same score. The server keeps these recordings for the top 50 runs, which lets any high score be checked by replaying it. Runs that reached the moon get a small moon icon on the board.
+
+If you're offline, your score waits in the browser and is sent automatically later, without ever being counted twice.
+
+## Playing on X
+
+Share the link https://decicat.bitcade.xyz/play on X and it unfolds into a player card, so people can play right inside their timeline. The Share on X button on the game-over screen writes a post with your time, how far you got and your rank.
+
+## Privacy
+
+We'd like to know how many people enjoy the game, so it keeps a simple, anonymous count of players per day.
+
+Your browser gets a random ID that has nothing to do with you, your name or your device. Once per visit the game sends that ID and whether you started a run. The server never stores the ID itself, only a salted one-way hash of it.
+
+No IP addresses, names, cookies or device details are saved. The count is completely separate from the leaderboard and never affects gameplay. Local copies of the game don't send anything, and adding `?noping` to the URL turns it off.
+
+## Under the hood
+
+DECICAT is plain JavaScript with no frameworks and no runtime dependencies.
+
+**Rendering.** Everything is drawn on an HTML5 canvas at a low native resolution, roughly 240 pixels on the short side. The browser scales it up with smoothing turned off, in whole-number steps wherever the screen allows, so the pixels stay crisp. The sprites, the bitmap font, the parallax skies and the Decibel moons are hand-made pixel art stored as data in the code. There are no image files in the game itself.
+
+**Audio.** There are no audio files either. All music and sound effects are synthesized live with the Web Audio API from note data in `audio.js`. Every stage has its own original track, plus themes for the title, the 40x boost, Moon Mode and the results screen. You can hear a few of them in [docs/music](docs/music): the [title theme](docs/music/title_theme.mp3), the [Bear King stage](docs/music/stage9_bear_king.mp3) and [Moon Mode](docs/music/moon_mode.mp3).
+
+**Determinism.** The game logic runs on a fixed 60 Hz timestep, all randomness comes from one seeded generator, and input is applied only at step boundaries. That is what makes the replay checks possible. Visual effects like dust and screen shake use their own randomness and never touch the game state.
+
+**Backend.** A single Cloudflare Worker serves the game, the X player card and the API. All scores live in one SQLite-backed Durable Object, which gives exact ranks without race conditions. It also handles rate limiting and duplicate-free resubmits.
+
+**Single-file build.** `build.mjs` inlines every script into `dist/decicat.html`, one self-contained file that the Worker serves and that also works offline straight from disk.
+
+```mermaid
+flowchart LR
+  P[Player's browser] -->|/play| W[Cloudflare Worker]
+  X[X post] -->|player card| W
+  W -->|/embed| G[dist/decicat.html]
+  G -->|scores and replays| W
+  W --> DO[(Leaderboard Durable Object<br/>SQLite)]
+  V[tools/verify.mjs] -->|admin API| W
+  V -->|replays the run| G
+```
+
+## Project layout
+
+```
+index.html       Page shell, canvas and the name editor
+config.js        Chooses the online or on-device leaderboard
+sprites.js       Pixel sprites and the bitmap font
+audio.js         Web Audio synth, soundtrack and sound effects
+bg.js            Parallax backgrounds and the pixel Decibel moons
+game.js          Game logic, stages, boss, ending, UI and leaderboard client
+build.mjs        Builds dist/decicat.html
+dist/            The built single-file game
+server/
+  worker.js      Cloudflare Worker and the Leaderboard Durable Object
+  wrangler.toml  Worker configuration
+  play.html      Share page with the X player-card tags
+  card.png       Card image
+tools/           Headless Chrome tests, replay verifier, stats and capture scripts
+docs/            Screenshots and music previews
+CHANGELOG.md     Release history
+```
+
+## Running locally
+
+No build step is needed to play. Open `index.html` or `dist/decicat.html` in a browser. A copy opened from disk or from localhost keeps its leaderboard on your device. Hosted copies use the online board.
+
+A few URL parameters help during development. Runs played with any of them are never ranked.
+
+| Parameter | Effect |
+| --- | --- |
+| `?zone=3` | Start at a given stage (11 or higher is Moon Mode) |
+| `?seed=7` | Use a fixed level seed |
+| `?zt=6` | Seconds per stage |
+| `?bot` | Let the game play itself |
+| `?god` | No deaths |
+| `?boost` | Start with the 40x boost |
+| `?nogate` | Skip the Tap to Start screen |
+
+### Building
+
+```sh
+node build.mjs
+```
+
+This writes `dist/decicat.html`. Rebuild after changing any source file, since the Worker and the tests use the built file.
+
+### Testing
+
+The tests drive headless Chrome through `playwright-core`. Install it once, then run the scripts from `tools/`. They look for Chrome at `/usr/bin/google-chrome` unless you set `CHROME`.
+
+```sh
+cd tools && npm install
+node test3.mjs                                   # UI and regression checks
+URL0="file://$PWD/../dist/decicat.html" node test5.mjs   # stages 8-10, ending, trophies, skins, sharing
+ZT=8 node replaytest.mjs                         # determinism: replays must reproduce the score
+ZT=8 Z0=8 node replaytest.mjs                    # the same, starting at stage 8 and running through the ending
+```
+
+The server tests need a local Worker. Create `server/.dev.vars` with a placeholder admin key (this file is git-ignored):
+
+```sh
+echo 'ADMIN_KEY=change-me-local-only' > server/.dev.vars
+cd server && npx wrangler dev --local --port 8787 --var DEV:1
+```
+
+Then, from `tools/`:
+
+```sh
+node lbtest.mjs        # leaderboard API
+node e2e_online.mjs    # offline queue and resubmit
+node contest_e2e.mjs   # replay storage, Score Codes and verification
+node ping_e2e.mjs      # anonymous player count
+```
+
+`mem2.mjs` runs a long memory soak if you want to check for leaks.
+
+### Deploying
+
+```sh
+node build.mjs
+cd server
+npx wrangler secret put ADMIN_KEY
+npx wrangler deploy
+```
+
+The secret only needs to be set once. Without it, Score Codes and the admin API are switched off. If you deploy your own copy, replace the custom domain route and the KV namespace id in `wrangler.toml` with your own. The KV binding is only read once, to import scores from an early version of the leaderboard.
+
+### Checking scores
+
+`tools/verify.mjs` fetches a stored run from the server, replays it in headless Chrome with the built game and compares the result with the claimed score. It can also check a Score Code. `tools/stats.mjs` prints the daily player counts. Both need the admin key, from the `ADMIN_KEY` environment variable or a key file.
+
+```sh
+cd tools
+ADMIN_KEY=your-admin-key node verify.mjs list --game "$PWD/../dist/decicat.html"
+ADMIN_KEY=your-admin-key node verify.mjs entry 1 --game "$PWD/../dist/decicat.html"
+ADMIN_KEY=your-admin-key node verify.mjs claim DCAT-XXXX-XX
+ADMIN_KEY=your-admin-key node stats.mjs --days 30
+```
+
+Add `--base http://127.0.0.1:8787` to point either tool at a local Worker.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
