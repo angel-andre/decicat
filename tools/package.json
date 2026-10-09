@@ -1,0 +1,9 @@
+{
+  "name": "decicat-tools",
+  "private": true,
+  "type": "module",
+  "description": "Headless-Chrome tests, replay verifier and capture scripts for DECICAT",
+  "dependencies": {
+    "playwright-core": "^1.64.0"
+  }
+}

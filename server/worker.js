@@ -1,7 +1,12 @@
 // DECICAT leaderboard + share pages - Cloudflare Worker + SQLite-backed Durable Object.
 // Routes:
 //   GET  /api/top    -> { top: [{id,name,score}] (top 20), total }
-//   POST /api/score  -> body {name, score, runMs, nonce} -> { ok, id, rank, ranked, total, top }
+//   POST /api/score  -> body {name, score, runMs, nonce, replay?, v?} -> { ok, id, rank, ranked, total, top, claim? }
+//                       replay = {v, seed, w, h, zt, z0, ev, rs, f, dbg}: the run's seed + delta-encoded input log. The game's
+//                       sim is deterministic (fixed 60 Hz step, seeded RNG), so tools/verify.mjs can re-simulate it headlessly
+//                       and get the identical score. Replays are kept ONLY while the run is in the top 50.
+//                       A top-20 run gets a private claim code (DCAT-XXXX-XX); only its SHA-256 is stored.
+//   GET  /api/admin/entries?n=50, /api/admin/entry?id=|rank=   (header x-admin-key: ADMIN_KEY secret) -> entries + replays
 //   GET  /play       -> share page with X (Twitter) player-card meta tags
 //   GET  /embed      -> the game itself (frameable by x.com / twitter.com), online leaderboard on
 //   GET  /card.png   -> poster image for the card
@@ -19,6 +24,9 @@ const MAX_BONUS = 5000;        // slack for short runs that catch a boost + coin
 const MIN_RANKED_MS = 2000;    // shorter runs are stored but not ranked (never an error)
 const MAX_RUN_MS = 2 * 60 * 60 * 1000;
 const RATE_PER_MIN = 30;       // score posts per IP per minute (friends often share an IP)
+const REPLAY_TOP = 50;         // keep replays only for the top 50
+const CLAIM_TOP = 20;          // claim codes for the top 20
+const CLAIM_ABC = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const BAD = ['fuck', 'shit', 'cunt', 'bitch', 'nigg', 'fag', 'rape', 'nazi', 'hitler', 'whore', 'slut', 'dick', 'cock', 'pussy', 'asshole', 'retard', 'kike', 'spic', 'chink', 'twat', 'wank', 'porn', 'cum', 'tits'];
 
 function sanitizeName(s) {
@@ -29,6 +37,30 @@ function sanitizeName(s) {
   return s;
 }
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' };
+const enc = new TextEncoder();
+const hex = buf => Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+async function sha256hex(s) { return hex(await crypto.subtle.digest('SHA-256', enc.encode(s))); }
+// claim code = HMAC(secret derived from ADMIN_KEY, entry id) -> deterministic, so an idempotent resend shows the same code
+async function claimCode(adminKey, id) {
+  const k = await crypto.subtle.importKey('raw', enc.encode('decicat-claim:' + adminKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', k, enc.encode(String(id))));
+  let c = ''; for (let i = 0; i < 6; i++) c += CLAIM_ABC[((mac[2 * i] << 8) | mac[2 * i + 1]) % CLAIM_ABC.length];
+  return 'DCAT-' + c.slice(0, 4) + '-' + c.slice(4);
+}
+function timingSafeEq(a, b) {
+  a = enc.encode(String(a)); b = enc.encode(String(b));
+  let d = a.length ^ b.length; for (let i = 0; i < Math.max(a.length, b.length); i++) d |= (a[i] || 0) ^ (b[i] || 0);
+  return d === 0;
+}
+// shape check only (the real check is the headless re-simulation in tools/verify.mjs)
+function cleanReplay(r) {
+  if (!r || typeof r !== 'object') return null;
+  const int = (v, a, b) => Number.isInteger(v) && v >= a && v <= b;
+  if (!int(r.seed, -2147483648, 2147483647) || !int(r.w, 50, 4000) || !int(r.h, 50, 4000)) return null;
+  if (typeof r.ev !== 'string' || r.ev.length > 60000 || !/^[0-9a-z.]*$/.test(r.ev)) return null;
+  const rs = Array.isArray(r.rs) ? r.rs.slice(0, 200).filter(x => Array.isArray(x) && x.length === 3 && x.every(n => Number.isInteger(n) && n >= 0 && n < 1e8)) : [];
+  return { v: String(r.v || '').slice(0, 16), seed: r.seed, w: r.w, h: r.h, zt: Number(r.zt) > 0 && Number(r.zt) < 1000 ? Number(r.zt) : 45, z0: int(r.z0, 1, 999) ? r.z0 : 1, ev: r.ev, rs, f: int(r.f, 0, 1e8) ? r.f : 0, dbg: r.dbg ? 1 : 0 };
+}
 const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj), {
   status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...CORS, ...extra }
 });
@@ -44,6 +76,9 @@ export class Leaderboard extends DurableObject {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, id TEXT NOT NULL, at INTEGER NOT NULL)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS rl (ip TEXT NOT NULL, minute INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (ip, minute))`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`);
+      // v4 columns (idempotent migration of the live table): replay JSON (top 50 only), claim-code hash, client version, had-replay flag
+      const cols = new Set(this.sql.exec(`PRAGMA table_info(scores)`).toArray().map(c => c.name));
+      for (const [c, t] of [['replay', 'TEXT'], ['claim_hash', 'TEXT'], ['ver', 'TEXT'], ['rp', 'INTEGER NOT NULL DEFAULT 0'], ['note', 'TEXT']]) if (!cols.has(c)) this.sql.exec(`ALTER TABLE scores ADD COLUMN ${c} ${t}`);
       await this.importLegacy();
     });
   }
@@ -64,7 +99,7 @@ export class Leaderboard extends DurableObject {
     }
     this.sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('kv_imported', ?)`, JSON.stringify({ at: Date.now(), n }));
   }
-  topList() { return this.sql.exec(`SELECT id, name, score FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray(); }
+  topList() { return this.sql.exec(`SELECT id, name, score, rp AS vf FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray(); }
   total() { return this.sql.exec(`SELECT COUNT(*) AS c FROM scores WHERE ranked = 1`).one().c; }
   rankOf(id) {
     const r = this.sql.exec(`SELECT score, at, ranked FROM scores WHERE id = ?`, id).toArray()[0];
@@ -78,7 +113,7 @@ export class Leaderboard extends DurableObject {
     if (!/^[a-zA-Z0-9]{8,64}$/.test(nonce)) return { status: 400, body: { ok: false, error: 'bad nonce' } };
     // idempotent retries: same nonce -> same stored score, same answer (a lost response never duplicates or loses a score)
     const seen = this.sql.exec(`SELECT id FROM nonces WHERE nonce = ?`, nonce).toArray()[0];
-    if (seen) return { status: 200, body: this.answer(seen.id, true) };
+    if (seen) return { status: 200, body: await this.answer(seen.id, true) };
     const n = (this.sql.exec(`SELECT n FROM rl WHERE ip = ? AND minute = ?`, ip, minute).toArray()[0] || { n: 0 }).n;
     if (n >= RATE_PER_MIN) return { status: 429, body: { ok: false, error: 'slow down', retryAfter: 60 - Math.floor((now / 1000) % 60) } };
     this.sql.exec(`INSERT INTO rl (ip, minute, n) VALUES (?, ?, 1) ON CONFLICT (ip, minute) DO UPDATE SET n = n + 1`, ip, minute);
@@ -87,15 +122,48 @@ export class Leaderboard extends DurableObject {
     if (!Number.isFinite(score) || score < 0 || score > 5_000_000) return { status: 400, body: { ok: false, error: 'bad score' } };
     if (!Number.isFinite(runMs) || runMs < 0 || runMs > MAX_RUN_MS) return { status: 400, body: { ok: false, error: 'bad runMs' } };
     if (score > (runMs / 1000) * MAX_PTS_PER_SEC + MAX_BONUS) return { status: 422, body: { ok: false, error: 'implausible' } };
-    const ranked = runMs >= MIN_RANKED_MS ? 1 : 0;
+    const rp = cleanReplay(body.replay);
+    // debug runs (?bot / ?god / custom zone length...) are stored but never ranked on the real board
+    const debugRun = !!(rp && rp.dbg) && this.env.DEV !== '1';
+    const ranked = runMs >= MIN_RANKED_MS && !debugRun ? 1 : 0;
     const id = now.toString(36) + Math.random().toString(36).slice(2, 8);
-    this.sql.exec(`INSERT INTO scores (id, name, score, run_ms, at, ranked) VALUES (?, ?, ?, ?, ?, ?)`, id, sanitizeName(body.name), score, runMs, now, ranked);
+    this.sql.exec(`INSERT INTO scores (id, name, score, run_ms, at, ranked, ver, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, sanitizeName(body.name), score, runMs, now, ranked, String(body.v || (rp && rp.v) || '').slice(0, 16), debugRun ? 'debug' : null);
     this.sql.exec(`INSERT INTO nonces (nonce, id, at) VALUES (?, ?, ?)`, nonce, id, now);
-    return { status: 200, body: this.answer(id, false) };
+    const rank = this.rankOf(id);
+    if (rp && rank > 0 && rank <= REPLAY_TOP) {
+      this.sql.exec(`UPDATE scores SET replay = ?, rp = 1 WHERE id = ?`, JSON.stringify(rp), id);
+      // drop replays of runs that have fallen out of the top 50 (rp stays 1 = it was submitted with a replay)
+      this.sql.exec(`UPDATE scores SET replay = NULL WHERE replay IS NOT NULL AND id NOT IN (SELECT id FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?)`, REPLAY_TOP);
+    }
+    return { status: 200, body: await this.answer(id, false, debugRun) };
   }
-  answer(id, replay) {
-    const row = this.sql.exec(`SELECT ranked FROM scores WHERE id = ?`, id).toArray()[0];
-    return { ok: true, id, rank: this.rankOf(id), ranked: !!(row && row.ranked), total: this.total(), top: this.topList(), replay };
+  async answer(id, dup, debugRun) {
+    const row = this.sql.exec(`SELECT ranked, claim_hash, note FROM scores WHERE id = ?`, id).toArray()[0];
+    const rank = this.rankOf(id), out = { ok: true, id, rank, ranked: !!(row && row.ranked), total: this.total(), top: this.topList(), dup };
+    if (row && row.note === 'debug') out.why = 'debug';
+    const key = this.env.ADMIN_KEY;
+    // claim code only in the response to the submit itself (or its idempotent resend), and only while it is in the top 20
+    if (key && rank > 0 && rank <= CLAIM_TOP && (!dup || row.claim_hash)) {
+      const code = await claimCode(key, id);
+      if (!row.claim_hash) this.sql.exec(`UPDATE scores SET claim_hash = ? WHERE id = ?`, await sha256hex(code), id);
+      out.claim = code;
+    }
+    return out;
+  }
+  // ---- admin (secret-protected in the fetch handler) ----
+  adminRows(where, args) {
+    return this.sql.exec(`SELECT id, name, score, run_ms, at, ranked, ver, rp, note, claim_hash, replay FROM scores ${where}`, ...args).toArray();
+  }
+  async adminEntries(n) {
+    const rows = this.adminRows(`WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, [Math.max(1, Math.min(500, n || 50))]);
+    return { entries: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, score: r.score, runMs: r.run_ms, at: r.at, ver: r.ver, hasReplay: !!r.replay, verifiable: !!r.replay, unverified: !r.rp, claimHash: r.claim_hash || null })), total: this.total() };
+  }
+  async adminEntry(id, rank) {
+    let r;
+    if (id) r = this.adminRows(`WHERE id = ?`, [String(id)])[0];
+    else if (rank) r = this.adminRows(`WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT 1 OFFSET ?`, [Math.max(0, (rank | 0) - 1)])[0];
+    if (!r) return null;
+    return { rank: this.rankOf(r.id), id: r.id, name: r.name, score: r.score, runMs: r.run_ms, at: r.at, ranked: !!r.ranked, ver: r.ver, note: r.note, unverified: !r.rp, claimHash: r.claim_hash || null, replay: r.replay ? JSON.parse(r.replay) : null };
   }
 }
 
@@ -117,6 +185,18 @@ export default {
         const r = await board(env).submit(body, ip);
         return json(r.body, r.status, r.status === 429 ? { 'retry-after': String(r.body.retryAfter || 5) } : {});
       } catch (e) { return json({ ok: false, error: 'unavailable' }, 503, { 'retry-after': '2' }); }
+    }
+    if (url.pathname.startsWith('/api/admin/') && req.method === 'GET') {
+      if (!env.ADMIN_KEY) return json({ ok: false, error: 'admin disabled' }, 503);
+      if (!timingSafeEq(req.headers.get('x-admin-key') || '', env.ADMIN_KEY)) return json({ ok: false, error: 'forbidden' }, 403);
+      try {
+        if (url.pathname === '/api/admin/entries') return json(await board(env).adminEntries(parseInt(url.searchParams.get('n') || '50', 10)));
+        if (url.pathname === '/api/admin/entry') {
+          const e = await board(env).adminEntry(url.searchParams.get('id'), parseInt(url.searchParams.get('rank') || '0', 10));
+          return e ? json(e) : json({ ok: false, error: 'not found' }, 404);
+        }
+      } catch (e) { return json({ ok: false, error: 'unavailable' }, 503); }
+      return json({ ok: false, error: 'not found' }, 404);
     }
     if (url.pathname === '/embed') {
       // online leaderboard on (config.js keeps a pre-set DECICAT_CONFIG)
