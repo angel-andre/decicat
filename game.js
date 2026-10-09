@@ -35,7 +35,7 @@
   })() : null;
 
   // ---------- utils ----------
-  const VERSION = 'v5.0';
+  const VERSION = 'v5.2';
   const cryptoSeed = () => (window.crypto && crypto.getRandomValues) ? (crypto.getRandomValues(new Uint32Array(1))[0] | 0) || 1 : ((Math.random() * 2147483647) | 0) || 1;
   let seed = DBG.seed || cryptoSeed();
   function rnd() { seed = (seed + 0x6D2B79F5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
@@ -603,6 +603,7 @@
     Snd.init();
     state = 'play'; stateT = 0; paused = false; pressing = false;
     resetRun();
+    firstHint = !DBG.bot && !DBG.poster && !LS.get(HINTKEY); if (firstHint) LS.set(HINTKEY, '1');
     runRec = { seed: runSeed, w: W, h: H, z0: zone, ev: [], lastF: 0, rs: [], dbg: (DBG.bot || DBG.god || DBG.boost || DBG.seed || DBG.zone !== 1 || ZONE_T !== ZONE_SECONDS) ? 1 : 0 };
     playZoneMusic('bar'); setRain(zoneRain(zone));
   }
@@ -1532,7 +1533,7 @@
   const SKIN_DEF = {
     night: { pal: { K: '#05040a', G: '#1c1a3a', g: '#3e3a78', L: '#c8c0ff', D: '#2e2470', Y: grad([92, 76, 182], [58, 46, 136]) } },
     gold: { pal: { K: '#2a1800', G: '#6a4600', g: '#d8a020', L: '#fffbe0', D: '#c08000', Y: grad([255, 222, 80], [240, 176, 30]) } },
-    hoodie: { map: (ch, x, y) => { const body = (y <= 9 && ch !== 'K' && ch !== 'G' && ch !== 'g') || (y >= 20 && y <= 40 && x >= 5); if (!body) return ch; if ((x === 16 || x === 23) && y >= 21 && y <= 25 && ch === 'Y') return 's'; return ch === 'Y' ? 'H' : ch === 'L' ? 'h' : ch === 'D' ? 'j' : ch; },
+    hoodie: { map: (ch, x, y) => { const body = (y <= 9 && ch !== 'K' && ch !== 'G' && ch !== 'g') || (y >= 20 && y <= 40 && x >= 5); if (!body) return ch; if ((x === 16 || (x === 23 && y >= 24)) && y >= 21 && y <= 25 && ch === 'Y') return 's'; return ch === 'Y' ? 'H' : ch === 'L' ? 'h' : ch === 'D' ? 'j' : ch; },
       pal: { H: '#3c3656', h: '#5c5684', j: '#262038', s: '#FFE500' } },
     laser: { map: (ch, x, y) => inShades(x, y) && ch === 'L' ? 'R' : ch, pal: { R: '#ff2030' } },
     astro: { map: (ch, x, y) => { if (y < 20 || x < 5 || y > 44) return ch; if (y >= 26 && y <= 27 && x >= 11 && x <= 13) return 'P'; return ch === 'Y' ? 'W' : ch === 'L' ? 'w' : ch === 'D' ? 's' : ch; },
@@ -1783,11 +1784,11 @@
     trophyIcon(x + 5, y + 7, true);
     text(l1, x + 16, y + 3, '#FFE500'); text(l2, x + 16, y + 12, q.skin ? '#7cfc9a' : '#d9d0ff');
   }
-  const CREDIT1 = 'ORIGINAL DECICAT CONCEPT BY @DONCASTRO.', CREDIT2 = 'GAME BY @ANGELATAPTOS';
+  const CREDIT1 = 'ORIGINAL DECICAT CONCEPT BY @DONCASTRO', CREDIT2 = 'GAME BY @ANGELATAPTOS';
   function creditLines() { return textW(CREDIT1) <= W - 6 ? 2 : 3; }
   function drawCredits(yb, c1, c2) { // bottom line's top at yb; wraps the concept credit on narrow screens
     if (creditLines() === 2) text(CREDIT1, W / 2, yb - 9, c1, { align: 'center' });
-    else { text('ORIGINAL DECICAT CONCEPT', W / 2, yb - 18, c1, { align: 'center' }); text('BY @DONCASTRO.', W / 2, yb - 9, c1, { align: 'center' }); }
+    else { text('ORIGINAL DECICAT CONCEPT', W / 2, yb - 18, c1, { align: 'center' }); text('BY @DONCASTRO', W / 2, yb - 9, c1, { align: 'center' }); }
     text(CREDIT2, W / 2, yb, c2, { align: 'center' });
   }
   const CANON_URL = 'https://decicat.bitcade.xyz/play'; // canonical public link (custom domain; workers.dev keeps working)
@@ -1871,6 +1872,24 @@
     }
   }
   const hash01 = n => { n = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); n ^= n >>> 13; n = Math.imul(n, 0xc2b2ae35); n ^= n >>> 16; return (n >>> 0) / 4294967296; };
+  // first-run controls hint (render-only: reads runT, never writes sim state, so replays/verification are unaffected)
+  const HINTKEY = 'decicat_hint_v1', HINT_T = 3.2;
+  let firstHint = false;
+  const finePointer = (() => { try { return matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (e) { return false; } })();
+  function drawHint() {
+    if (!firstHint || state !== 'play' || paused) return;
+    if (runT >= HINT_T) { firstHint = false; return; }
+    const a = runT < 0.25 ? runT / 0.25 : runT > HINT_T - 0.4 ? (HINT_T - runT) / 0.4 : 1;
+    const tap = finePointer ? 'CLICK' : 'TAP';
+    const L = [[finePointer ? 'CLICK OR SPACE TO JUMP' : 'TAP TO JUMP', '#FFE500', true], ['HOLD FOR A HIGHER JUMP', '#ffffff', false], [tap + ' AGAIN IN THE AIR', '#ffffff', false], ['FOR A DOUBLE JUMP', '#bdb3e6', false]];
+    const bw = Math.min(W - 6, Math.max(...L.map(l => textW(l[0], 1, l[2]))) + 16), bh = L.length * 10 + 8;
+    const bx = Math.round(W / 2 - bw / 2), by = Math.round(Math.max(playTop + 48, 44) + 24);
+    ctx.globalAlpha = clamp(a, 0, 1);
+    ctx.fillStyle = '#FFE500'; ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = '#1a1030'; ctx.fillRect(bx, by, bw, bh);
+    L.forEach((l, i) => text(l[0], W / 2, by + 5 + i * 10, l[1], { align: 'center', bold: l[2], shadow: '#05030c' }));
+    ctx.globalAlpha = 1;
+  }
   function drawBanner() {
     if (!banner) return;
     const t = banner.t, a = t < 0.2 ? t / 0.2 : t > banner.dur - 0.3 ? (banner.dur - t) / 0.3 : 1;
@@ -1906,10 +1925,25 @@
     const k = Math.floor(T * 3) % 3;
     if (on) { if (k >= 0) ctx.fillRect(x + 5, y + 2, 1, 3); if (k >= 1) ctx.fillRect(x + 7, y + 1, 1, 5); if (k >= 2) ctx.fillRect(x + 9, y, 1, 7); }
   }
+  // gate: the cratered Decibel logo-moon (same renderer/cache as the stage moons, 1:1 mark) in the top-right corner,
+  // below the music/sound toggles' row (y < 18) and clear of the cat
+  function drawGateMoon(T, catL, catTop) {
+    const r = 33, cx = W - 8 - r, cy = 20 + r;
+    if (cx - r < catL + 76 + 4 && cy + r > catTop - 4) return; // too cramped: never overlap the cat
+    // pixel halo: two stepped dithered rings, then a few twinkling stars around it
+    for (let ring = 0; ring < 2; ring++) {
+      const rr = r + 3 + ring * 3; ctx.fillStyle = ring ? 'rgba(255,229,0,0.08)' : 'rgba(255,229,0,0.16)';
+      for (let y = -rr; y <= rr; y++) { const hw = Math.floor(Math.sqrt(rr * rr - y * y)); if ((y + ring) % 2 === 0) ctx.fillRect(cx - hw, cy + y, hw * 2 + 1, 1); }
+    }
+    drawMoon(cx, cy, r);
+    const st = [[-r - 14, -6], [-r - 6, r - 2], [-12, r + 10], [r - 2, r + 9], [-r - 20, r * 0.6]];
+    st.forEach(([dx, dy], i) => { const on = (Math.floor(T * 2.4 + i * 1.7) % 4) !== 0, x = Math.round(cx + dx), y = Math.round(cy + dy); if (x < 2 || y < 18 || y > H - 2) return; ctx.fillStyle = on ? '#fff6b0' : '#8a7ac0'; ctx.fillRect(x, y, 1, 1); if (on && i % 2 === 0) { ctx.fillRect(x - 1, y, 3, 1); ctx.fillRect(x, y - 1, 1, 3); } });
+  }
   function drawGate() {
     const T = stateT;
     ctx.fillStyle = 'rgba(8,4,18,0.55)'; ctx.fillRect(0, 0, W, H);
     const csc = 2, ch = 46 * csc, cy = Math.round(H / 2 - ch / 2 - 10);
+    drawGateMoon(T, Math.round(W / 2 - 19 * csc), cy);
     const sh = Math.round(Math.sin(T * 3) * 1.5);
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(Math.round(W / 2 - 30), cy + ch - 2, 60, 3);
     drawSpr(Math.floor(T * 1.6) % 2 ? S.cat.idle2 : S.cat.idle, Math.round(W / 2 - 19 * csc), cy + sh * 0, false, csc);
@@ -1946,7 +1980,7 @@
     for (let i = 0; i < word.length; i++) {
       const lt = clamp((T - 0.15 - i * 0.13) / 0.55, 0, 1); if (lt <= 0) continue;
       const y = Math.round(-30 + (ty + 30) * easeBounce(lt));
-      text(word[i], tx0 + i * adv, y, i === 4 || i === 5 ? '#ffffff' : '#FFE500', { scale: sc, bold: true, shadow: '#8a2fb8', sx: 0, sy: sc });
+      text(word[i], tx0 + i * adv, y, i >= 4 ? '#ffffff' : '#FFE500', { scale: sc, bold: true, shadow: '#8a2fb8', sx: 0, sy: sc });
     }
     const sub = 'A DECIBEL ADVENTURE';
     if (T > 1.2) {
@@ -2076,11 +2110,23 @@
   function drawMoonIcon(x, y) { // little yellow moon = this run reached the ending
     ctx.fillStyle = '#FFE500'; ctx.fillRect(x + 1, y, 4, 7); ctx.fillRect(x, y + 1, 6, 5); ctx.fillStyle = '#a88400'; ctx.fillRect(x + 3, y + 2, 1, 1); ctx.fillRect(x + 1, y + 4, 1, 1);
   }
+  // word-wrap a line of pixel text to maxW (logical px)
+  function wrapText(str, maxW, bold) {
+    const out = []; let cur = '';
+    for (const w of str.split(' ')) { const t = cur ? cur + ' ' + w : w; if (cur && textW(t, 1, bold) > maxW) { out.push(cur); cur = w; } else cur = t; }
+    if (cur) out.push(cur); return out;
+  }
   function drawClaim() {
     const R = result; R.claimT = (R.claimT || 0) + 1 / 60;
     ctx.fillStyle = 'rgba(4,2,10,0.86)'; ctx.fillRect(0, 0, W, H);
-    const big = textW(R.claim, 2, true) <= W - 24 ? 2 : 1;
-    const bw = Math.min(W - 8, Math.max(textW(R.claim, big, true), textW("KEEP IT TO PROVE THIS SCORE IS YOURS.")) + 20), bh = 96;
+    // v5.2: every line is measured against the box (narrow portrait phones are ~200 logical px wide); long lines wrap
+    const msg = 'THIS CODE PROVES YOUR HIGH SCORE';
+    const maxBw = W - 8, pad = 8;
+    const big = textW(R.claim, 2, true) <= maxBw - 2 * pad - 4 ? 2 : 1;
+    const want = Math.max(textW(R.claim, big, true) + 4, textW('TOP 5! #' + R.rank, 1, true), textW('YOUR SCORE CODE'), textW('SCREENSHOT THIS!', 1, true), textW(msg), textW('TAP TO CONTINUE'));
+    const bw = Math.min(maxBw, want + 2 * pad), inner = bw - 2 * pad;
+    const L1 = wrapText('SCREENSHOT THIS!', inner, true), L2 = wrapText(msg, inner, false);
+    const bh = 7 + 11 + 11 + (big === 2 ? 20 : 13) + L1.length * 10 + L2.length * 9 + 3 + 12;
     const bx = Math.round(W / 2 - bw / 2), by = Math.round(H / 2 - bh / 2);
     ctx.fillStyle = '#FFE500'; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
     ctx.fillStyle = '#1a1030'; ctx.fillRect(bx, by, bw, bh);
@@ -2089,8 +2135,9 @@
     text('YOUR SCORE CODE', W / 2, y, '#d9d0ff', { align: 'center' }); y += 11;
     ctx.fillStyle = '#2d2050'; ctx.fillRect(bx + 6, y - 3, bw - 12, big === 2 ? 18 : 11);
     text(R.claim, W / 2, y, '#FFE500', { align: 'center', scale: big, bold: true, shadow: '#5a3a00' }); y += big === 2 ? 20 : 13;
-    text('SCREENSHOT THIS!', W / 2, y, '#ffffff', { align: 'center', bold: true }); y += 10;
-    text("KEEP IT TO PROVE THIS SCORE IS YOURS.", W / 2, y, '#ffffff', { align: 'center' }); y += 12;
+    L1.forEach(l => { text(l, W / 2, y, '#ffffff', { align: 'center', bold: true }); y += 10; });
+    L2.forEach(l => { text(l, W / 2, y, '#ffffff', { align: 'center' }); y += 9; });
+    y += 3;
     if (R.claimT > 1.2 && Math.floor(bgT * 2) % 2 === 0) text('TAP TO CONTINUE', W / 2, y, '#bdb3e6', { align: 'center' });
   }
   function drawPause() {
@@ -2111,7 +2158,7 @@
     if (state === 'moonwin') { drawMoonWin(); drawToggles(); return; }
     drawWorld();
     if (pwT.slow > 0 && state === 'play') { ctx.fillStyle = 'rgba(255,216,74,0.07)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(255,216,74,0.35)'; ctx.fillRect(0, 0, W, 1); ctx.fillRect(0, H - 1, W, 1); }
-    if (state === 'play' || state === 'dying') { drawFlipFx(); drawBanner(); drawHUD(); }
+    if (state === 'play' || state === 'dying') { drawFlipFx(); drawBanner(); drawHUD(); drawHint(); }
     if (state === 'over') { drawOver(); if (result && result.claimShow && result.claim) drawClaim(); else drawToggles(); }
     if (paused && state === 'play') drawPause();
     if (MEM) drawMem();

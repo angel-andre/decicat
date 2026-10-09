@@ -2,6 +2,16 @@
 
 All dates are 2026, Eastern Time. Version numbers match the git tags and GitHub releases.
 
+## v5.2 (Oct 9, ~06:45)
+- Title: the final T in DECICAT is now white, so CAT matches. Credit line reads "Original Decicat concept by @doncastro" (no trailing period).
+- Tap-to-start screen: pixel Decibel-logo moon in the top-right corner.
+- Decicat sprite: redrawn chin paw (curled thinking pose) on every skin and frame.
+- First-run hint: how to jump, hold for a higher jump, and double jump (shown once, display only, replays unaffected).
+- Score Code popup: "This code proves your high score", with every line fitted to the box on narrow phones.
+- Stage moons stay fully on screen on portrait phones while keeping the slow drift.
+- Audio cleanup: sound-effect nodes disconnect when they finish; silent unlock audio only on iPhone/iPad.
+- Server: admin leaderboard reset endpoint (`POST /api/admin/reset`).
+
 ## v5.1 (Oct 9, ~05:40)
 - Score Codes now go to the **top 5** only (were top 20) and are called "Score Codes": "Top 5! #3 · Your Score Code · Keep it to prove this score is yours."
 - Repository published: README, changelog, docs screenshots and music previews; test tools find files relative to the repo.

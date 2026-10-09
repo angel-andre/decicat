@@ -1,7 +1,6 @@
 # DECICAT worker. Deploy:  npx wrangler deploy   (from this folder, after `node ../build.mjs`)
 name = "decicat"
 main = "worker.js"
-# account_id = "<YOUR_CLOUDFLARE_ACCOUNT_ID>"   # or set CLOUDFLARE_ACCOUNT_ID in the environment
 compatibility_date = "2026-09-01"
 workers_dev = true
 # custom domain (attached via the API; keep it here so deploys never detach it). workers.dev stays on too.
@@ -10,7 +9,7 @@ routes = [ { pattern = "decicat.bitcade.xyz", custom_domain = true } ]
 # legacy KV (v1/v2 scores) - only read once by the Durable Object to import old entries
 [[kv_namespaces]]
 binding = "SCORES"
-id = "<YOUR_KV_NAMESPACE_ID>"
+id = "7837c3c73a4e41549c6b07a6ecbc450d"
 
 # all scores: one SQLite-backed Durable Object instance
 [[durable_objects.bindings]]

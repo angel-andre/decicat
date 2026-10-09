@@ -6,17 +6,15 @@
 //   node verify.mjs all    [--n 20] [--save 1]      re-simulate every top entry that has a replay
 //   node verify.mjs claim  <DCAT-XXXX-XX> [rank|id] check a claim code against the stored hash (searches the top 50 if no entry given)
 //   node verify.mjs file   <replay.json> [claimed]  re-simulate a replay saved to disk (offline)
-// Options: --base https://decicat.bitcade.xyz (default; decicat.decicat.workers.dev works too)   --key-file <repo>/.admin_key (default; or env ADMIN_KEY)
-//          --game <repo>/dist/decicat.html (the build to simulate with; must match the replay's version)
+// Options: --base https://decicat.bitcade.xyz (default; decicat.decicat.workers.dev works too)   --key-file /workspace/decicat/.admin_key (default; or env ADMIN_KEY)
+//          --game /workspace/decicat/game/dist/decicat.html (the build to simulate with; must match the replay's version)
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, ''); // repo root
-const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
 const argv = process.argv.slice(2), opt = {}, pos = [];
 for (let i = 0; i < argv.length; i++) { if (argv[i].startsWith('--')) opt[argv[i].slice(2)] = argv[++i]; else pos.push(argv[i]); }
 const BASE = (opt.base || process.env.DECICAT_BASE || 'https://decicat.bitcade.xyz').replace(/\/$/, '');
-const GAME = opt.game || ROOT + '/dist/decicat.html';
-const keyFile = opt['key-file'] || ROOT + '/.admin_key';
+const GAME = opt.game || '/workspace/decicat/game/dist/decicat.html';
+const keyFile = opt['key-file'] || '/workspace/decicat/.admin_key';
 const key = () => { if (process.env.ADMIN_KEY) return process.env.ADMIN_KEY.trim(); let k = readFileSync(keyFile, 'utf8').trim(); const m = k.match(/^ADMIN_KEY=(.*)$/m); return m ? m[1].trim() : k; };
 async function admin(path, body) {
   const r = await fetch(BASE + path, body ? { method: 'POST', headers: { 'x-admin-key': key(), 'content-type': 'application/json' }, body: JSON.stringify(body) } : { headers: { 'x-admin-key': key() } });
@@ -31,7 +29,7 @@ let browser = null, page = null;
 async function sim(rp) {
   if (!page) {
     const { chromium } = await import('playwright-core');
-    browser = await chromium.launch({ executablePath: process.env.CHROME || CHROME });
+    browser = await chromium.launch({ executablePath: process.env.CHROME || '/usr/bin/google-chrome' });
     page = await (await browser.newContext({ viewport: { width: 480, height: 480 } })).newPage();
     await page.goto('file://' + GAME + '?nogate'); await page.waitForFunction(() => window.__decicat && __decicat.simulate);
   }

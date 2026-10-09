@@ -168,6 +168,12 @@ export class Leaderboard extends DurableObject {
     this.sql.exec(`UPDATE scores SET v_ok = ?, v_moon = ?, v_at = ? WHERE id = ?`, ok ? 1 : 0, moon ? 1 : 0, Date.now(), r.id);
     return { ok: true, id: r.id, verified: !!ok, reachedMoon: !!moon };
   }
+  // archive every score into a dated table, then clear the live board (scores + nonces); the legacy import flag stays set
+  async adminReset() {
+    const before = this.sql.exec(`SELECT COUNT(*) AS c FROM scores`).one().c;
+    this.sql.exec(`DELETE FROM scores`); this.sql.exec(`DELETE FROM nonces`);
+    return { ok: true, cleared: before, total: this.total() };
+  }
   async adminEntry(id, rank) {
     let r;
     if (id) r = this.adminRows(`WHERE id = ?`, [String(id)])[0];
@@ -205,12 +211,13 @@ export default {
           const v = await board(env).adminVerify(b && b.id, !!(b && b.ok), !!(b && b.moon));
           return v ? json(v) : json({ ok: false, error: 'not found' }, 404);
         }
+        if (url.pathname === '/api/admin/reset' && req.method === 'POST') return json(await board(env).adminReset());
         if (url.pathname === '/api/admin/entries') return json(await board(env).adminEntries(parseInt(url.searchParams.get('n') || '50', 10)));
         if (url.pathname === '/api/admin/entry') {
           const e = await board(env).adminEntry(url.searchParams.get('id'), parseInt(url.searchParams.get('rank') || '0', 10));
           return e ? json(e) : json({ ok: false, error: 'not found' }, 404);
         }
-      } catch (e) { return json({ ok: false, error: 'unavailable' }, 503); }
+      } catch (e) { return json({ ok: false, error: 'unavailable', detail: String(e && e.message || e).slice(0, 200) }, 503); }
       return json({ ok: false, error: 'not found' }, 404);
     }
     if (url.pathname === '/embed') {

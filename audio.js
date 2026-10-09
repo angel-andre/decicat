@@ -373,6 +373,7 @@
       E.timer = setInterval(() => E.pump(E.ctx.currentTime + 0.25), 40);
     } catch (e) { E.ctx = null; }
   };
+  const NEEDS_TAG = (() => { try { const u = navigator.userAgent || ''; return /iP(hone|ad|od)/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1); } catch (e) { return false; } })();
   // 0.5 s of 8-bit silence at 8 kHz as a data: URI (built once)
   let _silent = null;
   function silentWavURI() {
@@ -387,6 +388,7 @@
     if (E.offline) return;
     if (!E.ctx) E.init();
     if (E.ctx && E.ctx.state !== 'running') { try { E.ctx.resume(); } catch (e) { } }
+    if (!E._tag && !NEEDS_TAG) E._tag = true; // desktop/Android: no looping media element (it kept a whole media pipeline + output stream alive)
     if (!E._tag) {
       try {
         // tiny silent WAV played through an <audio> tag: lets iOS route Web Audio even with the ringer switch on silent
@@ -413,10 +415,15 @@
     o.onended = () => { try { o.disconnect(); } catch (e) { } }; return o;
   }
   const mf = n => 440 * Math.pow(2, (n - 69) / 12);
-  function send(node, rev, dly) { // SFX sends (short-lived)
-    if (rev) { const s = E.ctx.createGain(); s.gain.value = rev; node.connect(s); s.connect(E.g.rev); }
-    if (dly) { const s = E.ctx.createGain(); s.gain.value = dly; node.connect(s); s.connect(E.g.dly); }
+  // SFX sends (short-lived). v5.2: each send gain is remembered on its source gain and disconnected with it when the
+  // one-shot ends. (Before, every send stayed connected to the shared reverb/delay forever: a node connected to a live
+  // node is never freed, so every coin/power-up/trophy jingle leaked 1-2 nodes into the graph for the life of the tab.)
+  function send(node, rev, dly) {
+    const L = node._sends || (node._sends = []);
+    if (rev) { const s = E.ctx.createGain(); s.gain.value = rev; node.connect(s); s.connect(E.g.rev); L.push(s); }
+    if (dly) { const s = E.ctx.createGain(); s.gain.value = dly; node.connect(s); s.connect(E.g.dly); L.push(s); }
   }
+  const unplug = nodes => { for (const n of nodes) { if (!n) continue; try { n.disconnect(); } catch (e) { } if (n._sends) { unplug(n._sends); n._sends = null; } } };
   function mkVoices(song, out, dr, t0) {
     const ctx = E.ctx, S = song.inst, K = song.kinds, nodes = [], srcs = [];
     const N = n => (nodes.push(n), n);
@@ -588,13 +595,13 @@
     const ctx = E.ctx, o = (type === 'p25' || type === 'p12') ? mkOsc(type, f0, t, t + dur + 0.05) : mkOsc(type, f0, t, t + dur + 0.05);
     if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur * (curve || 1));
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g); g.connect(out || E.g.sfx); o.onended = () => { try { o.disconnect(); g.disconnect(); } catch (e) { } }; return g;
+    o.connect(g); g.connect(out || E.g.sfx); o.onended = () => unplug([o, g]); return g;
   }
   function sNoise(t, dur, vol, type, f0, f1, q, out) {
     const ctx = E.ctx, n = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
     n.buffer = noiseBuf; n.loop = true; f.type = type || 'bandpass'; f.frequency.setValueAtTime(f0 || 1000, t); if (f1) f.frequency.exponentialRampToValueAtTime(f1, t + dur); f.Q.value = q || 1;
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + Math.min(0.02, dur / 4)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    n.connect(f); f.connect(g); g.connect(out || E.g.sfx); n.start(t, Math.random()); n.stop(t + dur + 0.05); n.onended = () => { try { n.disconnect(); f.disconnect(); g.disconnect(); } catch (e) { } }; return g;
+    n.connect(f); f.connect(g); g.connect(out || E.g.sfx); n.start(t, Math.random()); n.stop(t + dur + 0.05); n.onended = () => unplug([n, f, g]); return g;
   }
   const SFX = {
     jump(t) { sOsc('p25', 260, 620, t, 0.13, 0.22); sNoise(t, 0.06, 0.06, 'highpass', 4000); },
@@ -609,6 +616,7 @@
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.28, t + 0.05); g.gain.setTargetAtTime(0.0001, t + 0.4, 0.06);
       o.frequency.linearRampToValueAtTime(95, t + 0.3); o2.frequency.linearRampToValueAtTime(90, t + 0.3);
       const ws = ctx.createWaveShaper(); ws.curve = distCurve; o.connect(ws); o2.connect(ws); ws.connect(lp); lp.connect(g); g.connect(E.g.sfx); E.duck(t, 0.7, 0.3);
+      o.onended = () => unplug([o, o2, ws, lp, g, lfo, lg]); // v5.2: the whole chain (it used to stay wired to the SFX bus forever)
     },
     warn(t) { [0, 0.16, 0.32].forEach((d, i) => sOsc('p25', i % 2 ? 660 : 880, 0, t + d, 0.11, 0.13)); },
     impact(t) { sOsc('sine', 110, 35, t, 0.35, 0.5); sNoise(t, 0.3, 0.3, 'lowpass', 1200, 150); E.duck(t, 0.65, 0.2); },
@@ -660,6 +668,7 @@
       g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.32, t + 0.08); g.gain.setTargetAtTime(0.0001, t + 0.7, 0.1);
       o.frequency.linearRampToValueAtTime(80, t + 0.4); o.frequency.linearRampToValueAtTime(45, t + 0.95); o2.frequency.linearRampToValueAtTime(76, t + 0.4);
       const ws = ctx.createWaveShaper(); ws.curve = distCurve; o.connect(ws); o2.connect(ws); ws.connect(lp); lp.connect(g); g.connect(E.g.sfx);
+      o.onended = () => unplug([o, o2, ws, lp, g]);
       sNoise(t, 0.9, 0.12, 'bandpass', 500, 200, 2); E.duck(t, 0.5, 0.8);
     },
     throwC(t) { sNoise(t, 0.25, 0.14, 'bandpass', 800, 3000, 2); sOsc('triangle', 500, 900, t, 0.2, 0.08); },
@@ -677,7 +686,7 @@
     touchdown(t) { sOsc('sine', 140, 40, t, 0.6, 0.5); sNoise(t, 0.6, 0.25, 'lowpass', 900, 100); },
     trophy(t) { [1047, 1319, 1568, 2093].forEach((f, i) => { const g = sOsc('triangle', f, 0, t + i * 0.07, i === 3 ? 0.5 : 0.15, 0.13); send(g, 0.35, 0.3); }); }
   };
-  E.sfx = function (name, at) { if (!E.ctx || !SFX[name]) return; SFX[name](at !== undefined ? at : E.ctx.currentTime + 0.005); };
+  E.sfx = function (name, at) { if (!E.ctx || !SFX[name] || (!E.sfxOn && !E.offline)) return; SFX[name](at !== undefined ? at : E.ctx.currentTime + 0.005); };
 
   // looped ambiences: rain + rocket (level 0 = off)
   E.ambience = function (kind, level, at) {

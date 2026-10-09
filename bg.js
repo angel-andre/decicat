@@ -509,8 +509,12 @@
       if (b.skyDeco && (zt === 6 || zt === 7)) { const o = ((E.camX * b.skyDeco.p + T * b.skyDeco.drift) % TW + TW) % TW; for (let rep = 0; rep * TW - o < W; rep++) ctx.drawImage(b.skyDeco.c, Math.round(rep * TW - o), 0); }
       const drawIcon = () => {
       if (!opt.noIcon) {
-        const ic = b.icon, span = W + ic.width + 40;
-        const ix = zt === 5 ? Math.round(W * 0.82 - ic.width / 2) : Math.round(((W * (zt === 3 ? 0.3 : 0.74) - E.camX * 0.01) % span + span) % span - ic.width / 2 - 20);
+        const ic = b.icon;
+        // v5.2: slow drift that ping-pongs inside the visible width (it used to wrap round and leave narrow portrait screens)
+        const R = Math.max(0, W - ic.width - 8), f = zt === 5 ? 0.82 : zt === 3 ? 0.3 : 0.74;
+        let ix;
+        if (zt === 5 || R === 0) ix = Math.round(Math.min(R, Math.max(0, W * f - ic.width / 2 - 4)) + 4);
+        else { const u = f * R - E.camX * 0.01, m = ((u % (2 * R)) + 2 * R) % (2 * R); ix = Math.round(4 + (m <= R ? m : 2 * R - m)); }
         const iy = Math.round(top + ph * (zt === 5 ? 0.16 : zt === 4 ? 0.26 : zt === 2 ? 0.3 : zt === 6 ? 0.17 : 0.2) - ic.height / 2 + Math.sin(T * 0.5) * 1.5);
         ctx.drawImage(ic, ix, Math.max(20, iy));
       }
