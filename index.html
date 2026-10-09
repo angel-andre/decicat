@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1a1030">
+<link rel="icon" href="data:,">
+<title>DECICAT - A Decibel Adventure</title>
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#0d0820;touch-action:none;overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}
+body{position:fixed;inset:0}
+#c{position:absolute;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none;cursor:pointer}
+#namebox{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(8,4,18,.8);z-index:5;touch-action:auto}
+#namebox .card{background:#1a1030;border:3px solid #6b55b0;padding:16px;width:min(86vw,300px);box-shadow:0 0 0 3px #0d0820;font:bold 13px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#fff;text-transform:uppercase}
+#namebox h2{margin:0 0 10px;color:#FFE500;font-size:15px;letter-spacing:1px}
+#namein{width:100%;box-sizing:border-box;font:bold 16px ui-monospace,Menlo,Consolas,monospace;padding:8px;border:2px solid #6b55b0;background:#0d0820;color:#FFE500;text-transform:uppercase;outline:none;-webkit-user-select:text;user-select:text}
+#namemsg{font-size:10px;color:#bdb3e6;margin:8px 0 12px;text-transform:none;font-weight:normal}
+#namebox .row{display:flex;gap:8px}
+#namebox button{flex:1;font:bold 13px ui-monospace,Menlo,Consolas,monospace;padding:9px 6px;border:0;cursor:pointer;text-transform:uppercase}
+#namesave{background:#FFE500;color:#2a1a00}#nameskip{background:#3a2d63;color:#fff}
+</style>
+</head>
+<body>
+<canvas id="c" width="240" height="240"></canvas>
+<div id="namebox"><div class="card">
+<h2>Your name</h2>
+<input id="namein" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done">
+<div id="namemsg"></div>
+<div class="row"><button id="namesave">Save</button><button id="nameskip">Stay anon</button></div>
+</div></div>
+<script src="config.js"></script>
+<script src="sprites.js"></script>
+<script src="audio.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

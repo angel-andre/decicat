@@ -1,0 +1,23 @@
+# secrets and local config
+.admin_key
+.dev.vars
+**/.dev.vars
+.env
+.env.*
+*.pem
+# Cloudflare / wrangler
+.wrangler/
+**/.wrangler/
+wrangler*.log
+# dependencies
+node_modules/
+# local capture output (tools write screenshots, music and videos here)
+shots/
+# reference media (not part of this repository)
+castro*.mp4
+ref/
+ref1080/
+ref_sprite.jpg
+# OS / editor
+.DS_Store
+Thumbs.db

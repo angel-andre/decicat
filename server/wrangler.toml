@@ -1,0 +1,22 @@
+# DECICAT worker. To deploy later:
+#   npx wrangler kv namespace create SCORES   (paste the id below)
+#   npx wrangler deploy
+name = "decicat"
+main = "worker.js"
+# account_id = "<YOUR_CLOUDFLARE_ACCOUNT_ID>"   # or set CLOUDFLARE_ACCOUNT_ID in the environment
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "SCORES"
+id = "<YOUR_KV_NAMESPACE_ID>"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html"]
+fallthrough = true
+
+[[rules]]
+type = "Data"
+globs = ["**/*.png"]
+fallthrough = true
