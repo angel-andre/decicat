@@ -17,8 +17,8 @@ Grab the gold **40x** box for a 4-second invincible rocket boost.
 The BTC number in the HUD is just for fun. It isn't a real price.
 
 ## v5.4 (anonymous player counter)
-- Privacy: on page load (and on the first run of that page load) the online game sends one fire-and-forget POST /api/ping with ONLY `{id, ev}`: `id` is a random 128-bit value kept in localStorage `decicat_pid_v1` (not the leaderboard name, not derived from the device), `ev` is `load` or `run`. No cookies (`credentials: 'omit'`), never awaited, all errors swallowed. Not sent by local/file copies, in bot/poster/manual/record/seed/zone/zt test modes, or with `?noping`.
-- Server stores only SHA-256(random server salt + id) per UTC day (`ping_day`) and all-time (`ping_all`), plus per-day load/run counters (`ping_count`). No IP, user agent or name is stored; the per-minute limiter keys pings by a salted IP hash (rows purged after ~2 min, separate bucket from score posts). `/api/ping` always answers 204 and is isolated from the leaderboard routes.
+- **Privacy-first player count:** to know how many people enjoy the game, it keeps a simple anonymous count of players per day. Each browser gets a random ID (`decicat_pid_v1` in localStorage) that isn't linked to your name, device, X account or anything else about you. Once per visit the game sends just that random ID and whether a run started. No cookies, nothing slows down gameplay, and it's skipped in local copies and test modes (or add `?noping`).
+- The server never stores the ID itself, only a salted one-way hash, so even the count can't be traced back to a browser. No IP addresses, names or device details are saved. Rate limiting uses a short-lived salted hash that's deleted after about 2 minutes. The counter is fully separate from the leaderboard, so it can never affect scores or gameplay.
 - `GET /api/admin/stats?days=30` (x-admin-key) and `node tools/stats.mjs` print per-day unique players / loads / runs, all-time uniques and score totals. (The old sim-stats probe moved to `tools/simstats.mjs`.)
 - VERSION v5.4 uses the v5.3 physics, so all v5.2/v5.3 replays still verify.
 
