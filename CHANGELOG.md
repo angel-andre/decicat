@@ -2,6 +2,10 @@
 
 All dates are 2026, Eastern Time. Version numbers match the git tags and GitHub releases.
 
+## v5.4 (Oct 9, ~10:25)
+- Anonymous unique-player counter: the online game sends a fire-and-forget ping with only a random per-browser id and the event type (load / first run). The server keeps only salted SHA-256 hashes per UTC day and all-time plus daily load/run counts; no IP, user agent, name or cookies. Admin: `GET /api/admin/stats`, `tools/stats.mjs`.
+- Gameplay and replays unchanged (v5.4 uses the v5.3 physics).
+
 ## v5.3 (Oct 9, ~07:10)
 - Game feel: coyote time and jump buffer, faster fall with a short hang at the apex (same max height), squash and stretch, landing dust, coin pops, power-up flash, screen shake and hit-stop on stomps and death (reduced-motion aware).
 - Replays carry their version; v5.2 replays still verify with v5.2 physics.

@@ -9,6 +9,10 @@
 //   GET  /api/admin/entries?n=50, /api/admin/entry?id=|rank=   (header x-admin-key: ADMIN_KEY secret) -> entries + replays
 //   POST /api/admin/verify {id, ok, moon}  (admin) -> stores the verify.mjs re-sim result; reachedMoon shown on the
 //                       board = the verified flag when present, else the client's claim (display only)
+//   POST /api/ping   -> body {id, ev}: anonymous unique-player counter (v5.4). id = the browser's random 128-bit id
+//                       (32 hex), ev = 'load' | 'run'. Stores ONLY SHA-256(secret salt + id) per UTC day and all-time,
+//                       plus per-day load/run counters. No IP, user agent or name is stored. Always answers 204.
+//   GET  /api/admin/stats?days=30 (admin) -> per-day unique players / loads / runs, all-time uniques, score totals
 //   GET  /play       -> share page with X (Twitter) player-card meta tags
 //   GET  /embed      -> the game itself (frameable by x.com / twitter.com), online leaderboard on
 //   GET  /card.png   -> poster image for the card
@@ -27,6 +31,7 @@ const MOON_MIN_MS = 440000;    // the ending needs all 10 stages (10 x 45 s of s
 const MIN_RANKED_MS = 2000;    // shorter runs are stored but not ranked (never an error)
 const MAX_RUN_MS = 2 * 60 * 60 * 1000;
 const RATE_PER_MIN = 30;       // score posts per IP per minute (friends often share an IP)
+const PING_PER_MIN = 60;       // anonymous counter pings per (hashed) IP per minute, separate bucket from scores
 const REPLAY_TOP = 50;         // keep replays only for the top 50
 const CLAIM_TOP = 5;           // score codes for the top 5
 const CLAIM_ABC = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
@@ -83,6 +88,7 @@ export class Leaderboard extends DurableObject {
       const cols = new Set(this.sql.exec(`PRAGMA table_info(scores)`).toArray().map(c => c.name));
       for (const [c, t] of [['replay', 'TEXT'], ['claim_hash', 'TEXT'], ['ver', 'TEXT'], ['rp', 'INTEGER NOT NULL DEFAULT 0'], ['note', 'TEXT'], ['moon', 'INTEGER NOT NULL DEFAULT 0'], ['v_ok', 'INTEGER'], ['v_moon', 'INTEGER'], ['v_at', 'INTEGER']]) if (!cols.has(c)) this.sql.exec(`ALTER TABLE scores ADD COLUMN ${c} ${t}`);
       await this.importLegacy();
+      try { this.pingSchema(); } catch (e) { this.pingOk = false; } // v5.4 player counter: never allowed to break the board
     });
   }
   // one-time, idempotent import of the old KV lists (keyed by id, INSERT OR IGNORE)
@@ -101,6 +107,43 @@ export class Leaderboard extends DurableObject {
       }
     }
     this.sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('kv_imported', ?)`, JSON.stringify({ at: Date.now(), n }));
+  }
+  // ---- v5.4 anonymous player counter (separate tables; never reads or writes scores/nonces) ----
+  pingSchema() {
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ping_day (day TEXT NOT NULL, h TEXT NOT NULL, PRIMARY KEY (day, h))`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ping_all (h TEXT PRIMARY KEY, first_day TEXT NOT NULL)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS ping_count (day TEXT PRIMARY KEY, loads INTEGER NOT NULL DEFAULT 0, runs INTEGER NOT NULL DEFAULT 0)`);
+    let salt = (this.sql.exec(`SELECT v FROM meta WHERE k = 'ping_salt'`).toArray()[0] || {}).v;
+    if (!salt) { salt = hex(crypto.getRandomValues(new Uint8Array(32))); this.sql.exec(`INSERT OR IGNORE INTO meta (k, v) VALUES ('ping_salt', ?)`, salt); salt = this.sql.exec(`SELECT v FROM meta WHERE k = 'ping_salt'`).one().v; }
+    this.pingSalt = salt; this.pingOk = true;
+  }
+  async ping(id, ev, ip) {
+    if (!this.pingOk) this.pingSchema();
+    if (!/^[0-9a-f]{32}$/.test(String(id || '')) || (ev !== 'load' && ev !== 'run')) return { ok: false, error: 'bad ping' };
+    const now = Date.now(), minute = Math.floor(now / 60000), day = new Date(now).toISOString().slice(0, 10);
+    // same per-minute limiter as scores (rl table), but its own bucket so pings can never use up an IP's score budget,
+    // and keyed by a salted hash of the IP (the IP itself is never written; rows are purged after ~2 minutes)
+    const rk = 'p:' + (await sha256hex(this.pingSalt + ':ip:' + ip)).slice(0, 24);
+    const n = (this.sql.exec(`SELECT n FROM rl WHERE ip = ? AND minute = ?`, rk, minute).toArray()[0] || { n: 0 }).n;
+    if (n >= PING_PER_MIN) return { ok: false, error: 'slow down' };
+    this.sql.exec(`INSERT INTO rl (ip, minute, n) VALUES (?, ?, 1) ON CONFLICT (ip, minute) DO UPDATE SET n = n + 1`, rk, minute);
+    if (Math.random() < 0.05) this.sql.exec(`DELETE FROM rl WHERE ip LIKE 'p:%' AND minute < ?`, minute - 2);
+    const h = await sha256hex(this.pingSalt + ':' + id);
+    this.sql.exec(`INSERT OR IGNORE INTO ping_day (day, h) VALUES (?, ?)`, day, h);
+    this.sql.exec(`INSERT OR IGNORE INTO ping_all (h, first_day) VALUES (?, ?)`, h, day);
+    this.sql.exec(`INSERT INTO ping_count (day, loads, runs) VALUES (?, ?, ?) ON CONFLICT (day) DO UPDATE SET loads = loads + excluded.loads, runs = runs + excluded.runs`, day, ev === 'load' ? 1 : 0, ev === 'run' ? 1 : 0);
+    return { ok: true };
+  }
+  async adminStats(days) {
+    if (!this.pingOk) this.pingSchema();
+    days = Math.max(1, Math.min(366, days || 30));
+    const rows = this.sql.exec(`SELECT c.day AS day, c.loads AS loads, c.runs AS runs, (SELECT COUNT(*) FROM ping_day d WHERE d.day = c.day) AS uniq FROM ping_count c ORDER BY c.day DESC LIMIT ?`, days).toArray();
+    return {
+      days: rows.map(r => ({ day: r.day, uniquePlayers: r.uniq, loads: r.loads, runs: r.runs })),
+      allTimeUniquePlayers: this.sql.exec(`SELECT COUNT(*) AS c FROM ping_all`).one().c,
+      scores: { ranked: this.total(), stored: this.sql.exec(`SELECT COUNT(*) AS c FROM scores`).one().c },
+      note: 'days are UTC; runs = page loads that started at least one run'
+    };
   }
   topList() { return this.sql.exec(`SELECT id, name, score, rp AS vf, COALESCE(v_moon, moon) AS moon FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray(); }
   total() { return this.sql.exec(`SELECT COUNT(*) AS c FROM scores WHERE ranked = 1`).one().c; }
@@ -202,6 +245,20 @@ export default {
         return json(r.body, r.status, r.status === 429 ? { 'retry-after': String(r.body.retryAfter || 5) } : {});
       } catch (e) { return json({ ok: false, error: 'unavailable' }, 503, { 'retry-after': '2' }); }
     }
+    if (url.pathname === '/api/ping' && req.method === 'POST') {
+      // fire-and-forget counter: isolated try/catch, always 204, never touches the score endpoints
+      try {
+        const txt = await req.text();
+        if (txt.length <= 200) {
+          const b = JSON.parse(txt);
+          let ip = req.headers.get('cf-connecting-ip') || 'unknown';
+          if (env.DEV === '1' && req.headers.get('x-test-ip')) ip = req.headers.get('x-test-ip');
+          if (env.DEV === '1' && req.headers.get('x-test-fail')) throw new Error('test failure');
+          await board(env).ping(b && b.id, b && b.ev, ip);
+        }
+      } catch (e) { }
+      return new Response(null, { status: 204, headers: { 'cache-control': 'no-store', ...CORS } });
+    }
     if (url.pathname.startsWith('/api/admin/') && (req.method === 'GET' || req.method === 'POST')) {
       if (!env.ADMIN_KEY) return json({ ok: false, error: 'admin disabled' }, 503);
       if (!timingSafeEq(req.headers.get('x-admin-key') || '', env.ADMIN_KEY)) return json({ ok: false, error: 'forbidden' }, 403);
@@ -212,6 +269,7 @@ export default {
           return v ? json(v) : json({ ok: false, error: 'not found' }, 404);
         }
         if (url.pathname === '/api/admin/reset' && req.method === 'POST') return json(await board(env).adminReset());
+        if (url.pathname === '/api/admin/stats') return json(await board(env).adminStats(parseInt(url.searchParams.get('days') || '30', 10)));
         if (url.pathname === '/api/admin/entries') return json(await board(env).adminEntries(parseInt(url.searchParams.get('n') || '50', 10)));
         if (url.pathname === '/api/admin/entry') {
           const e = await board(env).adminEntry(url.searchParams.get('id'), parseInt(url.searchParams.get('rank') || '0', 10));

@@ -16,6 +16,12 @@ Grab the gold **40x** box for a 4-second invincible rocket boost.
 **Power-ups** (rare, at most one of each per zone): STOP-LOSS (blocks one hit or fall), LIQUIDITY MAGNET (6 s), LIMIT ORDER (slow-mo 0.6x for 4 s), DIAMOND PAWS (invincible 3 s). Active ones show under the score with a timer bar.
 The BTC number in the HUD is just for fun. It isn't a real price.
 
+## v5.4 (anonymous player counter)
+- Privacy: on page load (and on the first run of that page load) the online game sends one fire-and-forget POST /api/ping with ONLY `{id, ev}`: `id` is a random 128-bit value kept in localStorage `decicat_pid_v1` (not the leaderboard name, not derived from the device), `ev` is `load` or `run`. No cookies (`credentials: 'omit'`), never awaited, all errors swallowed. Not sent by local/file copies, in bot/poster/manual/record/seed/zone/zt test modes, or with `?noping`.
+- Server stores only SHA-256(random server salt + id) per UTC day (`ping_day`) and all-time (`ping_all`), plus per-day load/run counters (`ping_count`). No IP, user agent or name is stored; the per-minute limiter keys pings by a salted IP hash (rows purged after ~2 min, separate bucket from score posts). `/api/ping` always answers 204 and is isolated from the leaderboard routes.
+- `GET /api/admin/stats?days=30` (x-admin-key) and `node tools/stats.mjs` print per-day unique players / loads / runs, all-time uniques and score totals. (The old sim-stats probe moved to `tools/simstats.mjs`.)
+- VERSION v5.4 uses the v5.3 physics, so all v5.2/v5.3 replays still verify.
+
 ## v5.3 (game feel)
 - Jump physics (sim, versioned): coyote time 80 ms, jump buffer 100 ms, fall gravity x1.18, gravity x0.6 near the apex (|vy| < 35). Max jump height and air time stay within ~1.5% of v5.2, so gap reach is unchanged.
 - Replays are versioned: the sim picks its physics table from the replay's `v` (`PHYS.v52` for v5.2 and older, `PHYS.v53` for v5.3+), so v5.2 replays still verify exactly on this build. A v5.3 replay will NOT verify on a v5.2 build (expected).

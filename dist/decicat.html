@@ -1570,7 +1570,7 @@ G.LOGO.mark40 = [".......................###........", "......................##
   })() : null;
 
   // ---------- utils ----------
-  const VERSION = 'v5.3';
+  const VERSION = 'v5.4';
   const cryptoSeed = () => (window.crypto && crypto.getRandomValues) ? (crypto.getRandomValues(new Uint32Array(1))[0] | 0) || 1 : ((Math.random() * 2147483647) | 0) || 1;
   let seed = DBG.seed || cryptoSeed();
   function rnd() { seed = (seed + 0x6D2B79F5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
@@ -1794,6 +1794,31 @@ G.LOGO.mark40 = [".......................###........", "......................##
     async top() { if (!this.remote) return { top: await local.top(), total: 0 }; const r = await this.remote.top(); this.lastTop = r.top; return r; }
   };
   if (Scores.remote) setTimeout(() => { if (Scores.queued) Scores.flush(); }, 1500);
+  // v5.4: anonymous unique-player counter. Sends ONLY a random per-browser id (128 random bits in localStorage
+  // 'decicat_pid_v1'; not the leaderboard name, not derived from anything about the device) + an event type:
+  // 'load' once per page load and 'run' on the first run of that page load. Fire-and-forget: never awaited, every error
+  // swallowed, no cookies (credentials: 'omit'), nothing read from the response. Off for local/file copies and in
+  // bot / poster / replay / test modes (debug URL params), and with ?noping.
+  const Ping = (() => {
+    const off = !Scores.remote || !!REC || DBG.bot || DBG.god || DBG.boost || DBG.seed || DBG.zone !== 1 || DBG.manual || DBG.poster || DBG.autostart || Q.has('zt') || Q.has('noping');
+    const PIDKEY = 'decicat_pid_v1'; let pid = null, ran = false;
+    const id = () => {
+      if (pid) return pid;
+      let v = LS.get(PIDKEY);
+      if (!v || !/^[0-9a-f]{32}$/.test(v)) { v = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join(''); LS.set(PIDKEY, v); }
+      return (pid = v);
+    };
+    const send = ev => {
+      if (off) return;
+      try {
+        const url = String(CONFIG.apiBase || '').replace(/\/$/, '') + '/api/ping', body = JSON.stringify({ id: id(), ev });
+        if (typeof fetch === 'function') { const pr = fetch(url, { method: 'POST', body, keepalive: true, credentials: 'omit', cache: 'no-store', headers: { 'content-type': 'text/plain' } }); if (pr && pr.catch) pr.catch(() => { }); }
+        else if (navigator.sendBeacon) navigator.sendBeacon(url, body);
+      } catch (e) { }
+    };
+    return { load() { setTimeout(() => send('load'), 1200); }, run() { if (!ran) { ran = true; send('run'); } } };
+  })();
+  Ping.load();
   let best = parseInt(LS.get('decicat_best') || '0', 10) || 0;
   const CLAIMKEY = 'decicat_claims_v1';
   let lastReplay = null;
@@ -2144,7 +2169,7 @@ G.LOGO.mark40 = [".......................###........", "......................##
   function startGame() {
     Snd.init();
     state = 'play'; stateT = 0; paused = false; pressing = false;
-    resetRun(); PH = PHYS.v53; vfx.length = 0; vis.sx = vis.sy = 1; hitStop = 0;
+    resetRun(); PH = PHYS.v53; vfx.length = 0; vis.sx = vis.sy = 1; hitStop = 0; Ping.run();
     firstHint = !DBG.bot && !DBG.poster && !LS.get(HINTKEY); if (firstHint) LS.set(HINTKEY, '1');
     runRec = { seed: runSeed, w: W, h: H, z0: zone, ev: [], lastF: 0, rs: [], dbg: (DBG.bot || DBG.god || DBG.boost || DBG.seed || DBG.zone !== 1 || ZONE_T !== ZONE_SECONDS) ? 1 : 0 };
     playZoneMusic('bar'); setRain(zoneRain(zone));
