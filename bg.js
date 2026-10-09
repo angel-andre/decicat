@@ -130,7 +130,11 @@
       5: { ground: '#05030c', neb: ['#2a1650', '#173a52', '#3a1a48'], icon: ['#fff600', '#ccc300', '#111111', '#7a7400'] },
       6: { ground: '#04142a', sea: ['#061a33', '#0a2644', '#0e3254'], aur: ['#0f5a5a', '#1a7a6a', '#2a8a9a'], far: '#081a30', candle: ['#1e4a3a', '#4a2430'], icon: ['#8fe0e8', '#4a9aa8', '#0a1a2a', '#2e6a78'] },
       7: { ground: '#0e0806', far: '#24160e', mid: '#1a0f09', near: '#0f0905', pipe: '#3a2a1e', pipeHi: '#5a4430', steam: '#7a6a5e', haze: '#5a3418', icon: ['#f0a860', '#a86a30', '#1e120a', '#7a4a20'] },
-      8: { ground: '#06040c', far: '#160c28', mid: '#0e0820', near: '#08050f', grid: '#1e1238', screen: '#2a1648', icon: ['#e080f0', '#9a40a8', '#14081e', '#6a2a7a'] }
+      8: { ground: '#06040c', far: '#160c28', mid: '#0e0820', near: '#08050f', grid: '#1e1238', screen: '#2a1648', icon: ['#e080f0', '#9a40a8', '#14081e', '#6a2a7a'] },
+      9: { ground: '#03070a', far: '#071219', mid: '#0a1820', near: '#04090d', rack: '#0b1a23', rackHi: '#183444', cable: '#06100a', icon: ['#6af0b0', '#2a9a6a', '#06140e', '#1e6a4a'] },
+      10: { ground: '#0a0205', far: '#1e070b', mid: '#15040a', near: '#0b0206', stone: '#2a1014', stoneHi: '#3e1a1e', banner: '#6a0c18', gold: '#c89a2a', cloud: ['#2a0a10', '#3a0e16', '#4a141c', '#5a1a22'], icon: ['#ff8a6a', '#b03a2a', '#1a0606', '#7a2a1e'] },
+      11: { ground: '#140e1e', far: '#3a2a52', mid: '#251a38', near: '#160f24', steel: '#463a5c', steelHi: '#7a6a90', icon: ['#ffe28a', '#c8a040', '#2a1a10', '#8a6a2a'] },
+      12: { ground: '#2a2410', neb: ['#2a1650', '#173a52', '#3a1a48'], rock: ['#4a4220', '#6a5e2a', '#8a7a34', '#b8a448'], icon: ['#fff600', '#ccc300', '#111111', '#7a7400'] }
     };
     function key(zt, L) { return zt + ':' + (L % 5) + ':' + E.W + 'x' + E.H; }
     function get(zt, L) {
@@ -311,6 +315,94 @@
             x += w + RI(30, 70); }
           g.fillStyle = pal.near; for (let x2 = 0; x2 < TW; x2 += RI(24, 60)) { const w = RI(20, 50), h = RI(8, Math.round(ph * 0.08)); g.fillRect(x2, by - h, w, h + 2); }
         });
+      } else if (zt === 9) { // FRONT-RUNNER ALLEY: late-night server room / dark data alley, blinking racks (live LEDs), scrolling hex (live)
+        layer(0.03, g => { // far wall of racks
+          g.fillStyle = '#050d12'; g.fillRect(0, top, TW, by - top);
+          let x = 0; while (x < TW) { const w = RI(16, 22), h = Math.round(ph * R(0.42, 0.62)); g.fillStyle = pal.far; g.fillRect(x, by - h, w, h + 2); g.fillStyle = '#0c1c26';
+            for (let yy = by - h + 3; yy < by - 2; yy += 4) g.fillRect(x + 2, yy, w - 4, 2);
+            feat({ t: 'leds', x: x + 3, y: by - h + 3, w: w - 6, n: Math.floor((h - 5) / 4), p: 0.03, ph: rng() * 50, dim: 1 }); x += w + RI(1, 3); }
+          g.fillStyle = '#0a1a14'; for (let yy = top + 4; yy < top + 12; yy += 3) g.fillRect(0, yy, TW, 1); // ceiling cable trays
+        });
+        layer(0.1, g => { // mid racks, hanging cable bundles, alley signs
+          let x = 6, n = 0; while (x < TW) {
+            const w = RI(24, 32), h = Math.round(ph * R(0.36, 0.5)); g.fillStyle = pal.rack; g.fillRect(x, by - h, w, h + 2); g.fillStyle = pal.rackHi; g.fillRect(x, by - h, w, 1); g.fillRect(x, by - h, 1, h);
+            g.fillStyle = '#050b10'; for (let yy = by - h + 4; yy < by - 3; yy += 5) g.fillRect(x + 3, yy, w - 6, 3);
+            feat({ t: 'leds', x: x + 4, y: by - h + 5, w: w - 8, n: Math.floor((h - 8) / 5), p: 0.1, ph: rng() * 50, step: 5 });
+            if (n % 3 === 1) { const sw = 40, sx2 = x + Math.round(w / 2 - sw / 2), sy2 = by - h - 18; g.fillStyle = '#0e2a20'; g.fillRect(sx2 - 1, sy2 - 1, sw + 2, 11); g.fillStyle = '#020806'; g.fillRect(sx2, sy2, sw, 9);
+              const words = ['MEMPOOL', 'NODE 07', 'ORDERS', 'LATENCY']; const wd = words[(n >> 1) % 4]; tinyDraw(g, wd, sx2 + Math.round((sw - tinyW(wd)) / 2), sy2 + 2, '#2a8a5a'); feat({ t: 'neon', x: sx2, y: sy2, w: sw, h: 9, p: 0.1, ph: rng() * 6 }); }
+            for (let k = 0; k < 3; k++) { const cx = x + RI(2, w - 2), len = RI(8, 26); g.fillStyle = pal.cable; for (let i = 0; i < len; i++) g.fillRect(cx + Math.round(Math.sin(i * 0.3) * 1.5), top + i, 1, 1); }
+            n++; x += w + RI(10, 26);
+          }
+        });
+        layer(0.22, g => { // near: server crates, a fan grille, pipes
+          g.fillStyle = pal.near; let x = 0; while (x < TW) { const w = RI(18, 40), h = RI(8, Math.round(ph * 0.1)); g.fillRect(x, by - h, w, h + 2); if (rng() < 0.4) { g.fillStyle = '#0c1a20'; for (let i = 2; i < w - 2; i += 3) g.fillRect(x + i, by - h + 2, 1, Math.max(1, h - 4)); g.fillStyle = pal.near; } x += w + RI(10, 40); }
+          g.fillStyle = '#0a1418'; g.fillRect(0, by - Math.round(ph * 0.16), TW, 2);
+        });
+      } else if (zt === 10) { // BEAR KING: storm castle of red charts (towers are red candles), throne hall with banners + torches
+        { const [c, g] = mk(TW, H), cl = pal.cloud; // red storm clouds
+          for (let i = 0; i < 26; i++) { const cx = RI(0, TW), cy = Math.round(top + R(-6, ph * 0.18)), r = RI(14, 30); for (const dx of [-TW, 0, TW]) { dithCircle(g, cx + dx, cy, Math.round(r * 0.6), cl[0], q => 1.5 - q, 2.6); dithCircle(g, cx + dx + 4, cy - 3, Math.round(r * 0.42), cl[1], q => 1.35 - q, 2.4); dithCircle(g, cx + dx + 8, cy - 5, Math.round(r * 0.24), cl[2], q => 1.1 - q, 2.2); } }
+          g.fillStyle = cl[0]; g.fillRect(0, 0, TW, Math.max(0, top - 6)); dith(g, 0, Math.max(0, top - 6), TW, 14, cl[0], 0.5);
+          out.skyDeco = { c: hueShift(c, out.hue), p: 0.02, drift: 4 }; }
+        layer(0.03, g => { // castle on a crag: candle-towers with wicks, crenellated walls
+          const base = by - Math.round(ph * 0.2); g.fillStyle = pal.far;
+          for (let x = 0; x < TW; x++) { const hh = Math.round(ph * 0.06 * (1 + Math.sin(x * 0.02) * 0.5 + Math.sin(x * 0.07) * 0.2)); g.fillRect(x, base - hh, 1, by - base + hh); }
+          let x = 8; while (x < TW) { const w = RI(10, 18), h = RI(Math.round(ph * 0.22), Math.round(ph * 0.46)), y0 = base - h;
+            g.fillStyle = pal.far; g.fillRect(x, y0, w, h); g.fillRect(x + (w >> 1), y0 - RI(6, 14), 1, 14); // tower + wick
+            g.fillStyle = '#3a0c12'; g.fillRect(x + 1, y0 + 1, 1, h - 2); for (let yy = y0 + 6; yy < base - 4; yy += 9) { g.fillStyle = '#05010a'; g.fillRect(x + (w >> 1) - 1, yy, 2, 3); }
+            feat({ t: 'win', x: x + (w >> 1) - 1, y: y0 + 6, p: 0.03, ph: rng() * 6 });
+            const ww = RI(14, 30); g.fillStyle = pal.far; g.fillRect(x + w, base - RI(10, 18), ww, 30); for (let k = 0; k < ww; k += 4) g.fillRect(x + w + k, base - 22, 2, 4);
+            x += w + ww;
+          }
+        });
+        layer(0.1, g => { // throne-hall columns with hanging bear banners + torches
+          const ct = top + Math.round(ph * 0.08); g.fillStyle = pal.stone; g.fillRect(0, ct - 6, TW, 6); g.fillStyle = pal.stoneHi; g.fillRect(0, ct - 1, TW, 1);
+          for (let x = 0; x < TW; x += 64) {
+            g.fillStyle = pal.stone; g.fillRect(x, ct, 12, by - ct); g.fillStyle = pal.stoneHi; g.fillRect(x + 1, ct, 1, by - ct); g.fillRect(x - 2, ct, 16, 3); g.fillRect(x - 2, by - 6, 16, 4);
+            const bx = x + 26, bw = 22, bh = Math.round(ph * 0.3); g.fillStyle = pal.banner; g.fillRect(bx, ct, bw, bh); for (let i = 0; i < bw; i += 2) g.fillRect(bx + i, ct + bh, 1, 3 - (i % 4 === 0 ? 0 : 1));
+            g.fillStyle = pal.gold; g.fillRect(bx, ct, bw, 1); const ex = bx + 11, ey = ct + Math.round(bh * 0.4); // bear-head emblem
+            disc(g, ex, ey, 5, '#2a0a0e'); disc(g, ex - 4, ey - 5, 2, '#2a0a0e'); disc(g, ex + 4, ey - 5, 2, '#2a0a0e'); g.fillStyle = pal.gold; g.fillRect(ex - 3, ey - 9, 7, 2); g.fillRect(ex - 3, ey - 11, 1, 2); g.fillRect(ex, ey - 11, 1, 2); g.fillRect(ex + 3, ey - 11, 1, 2);
+            g.fillStyle = '#ff3a2a'; g.fillRect(ex - 2, ey - 1, 1, 1); g.fillRect(ex + 2, ey - 1, 1, 1);
+            g.fillStyle = '#3a2a1a'; g.fillRect(x + 50, ct + Math.round(ph * 0.22), 2, 6); feat({ t: 'torch', x: x + 50, y: ct + Math.round(ph * 0.22) - 1, p: 0.1, ph: rng() * 6 });
+          }
+        });
+        layer(0.22, g => { // near: balustrade with red chart candles
+          const yb = by - Math.round(ph * 0.07); g.fillStyle = pal.near; g.fillRect(0, yb, TW, by - yb + 2); g.fillRect(0, yb - 3, TW, 2);
+          for (let x = 0; x < TW; x += 6) g.fillRect(x, yb - 3, 2, 3);
+          for (let x = 4; x < TW; x += RI(18, 34)) { const h = RI(6, 16); g.fillStyle = '#3a0a10'; g.fillRect(x, yb - 3 - h, 4, h); g.fillRect(x + 2, yb - 6 - h, 1, 3); }
+        });
+      } else if (zt === 11) { // LAUNCH PAD: futuristic launch facility at dawn, gantries, countdown boards (live)
+        { const [c, g] = mk(TW, H); const sy = by - Math.round(ph * 0.22); // rising sun + streaky dawn clouds
+          dithCircle(g, 330, sy, 46, '#ffb070', q => (1 - q) * 0.5); disc(g, 330, sy, 18, '#ffd890'); disc(g, 330, sy, 15, '#fff0c0');
+          for (let i = 0; i < 12; i++) { const cy = Math.round(top + ph * R(0.1, 0.5)), cx = RI(0, TW), w = RI(30, 90); dith(g, cx, cy, w, 2, i % 2 ? '#c07a8a' : '#e0a080', 0.5); dith(g, cx + 8, cy - 1, w - 16, 1, '#f0c0a0', 0.4); }
+          out.skyDeco = { c, p: 0.01, drift: 1 }; }
+        layer(0.03, g => { // mountains + distant towers
+          for (let x = 0; x < TW; x++) { const hh = Math.round(ph * (0.14 + 0.06 * Math.sin(x * 0.013) + 0.03 * Math.sin(x * 0.05))); g.fillStyle = pal.far; g.fillRect(x, by - hh, 1, hh + 2); }
+          for (let k = 0; k < 4; k++) { const x = 40 + k * 128 + RI(-10, 10), h = Math.round(ph * R(0.24, 0.34)); g.fillStyle = '#2e2244'; g.fillRect(x, by - h, 3, h); g.fillRect(x - 3, by - h + 6, 9, 1); feat({ t: 'blink', x: x + 1, y: by - h - 2, p: 0.03, c: '#ff4a4a', ph: k * 1.7 }); }
+        });
+        layer(0.1, g => { // gantries + countdown boards + a far rocket
+          let x = 20, n = 0; while (x < TW) {
+            const h = Math.round(ph * R(0.36, 0.5)), w = 14; g.fillStyle = pal.mid; g.fillRect(x, by - h, 2, h); g.fillRect(x + w - 2, by - h, 2, h);
+            for (let yy = by - h; yy < by; yy += 8) { for (let i = 0; i < w; i++) { g.fillRect(x + i, yy + Math.round(i * 8 / w), 1, 1); } g.fillRect(x, yy, w, 1); }
+            g.fillRect(x - 6, by - h, w + 18, 3); feat({ t: 'blink', x: x + w + 10, y: by - h - 2, p: 0.1, c: '#ffcf6a', ph: n });
+            if (n % 2 === 0) { const bw = 46, bh = 17, bx = x + w + 8, byy = by - Math.round(h * 0.6); g.fillStyle = pal.steel; g.fillRect(bx - 1, byy - 1, bw + 2, bh + 2); g.fillStyle = '#07040c'; g.fillRect(bx, byy, bw, bh); g.fillStyle = pal.mid; g.fillRect(bx + 20, byy + bh + 1, 3, by - byy - bh); feat({ t: 'count', x: bx, y: byy, w: bw, h: bh, p: 0.1, k: n }); }
+            else { const rx = x + w + 14, rh = Math.round(ph * 0.3); g.fillStyle = '#3a2e50'; g.fillRect(rx, by - rh, 8, rh); g.fillRect(rx + 1, by - rh - 4, 6, 4); g.fillRect(rx + 3, by - rh - 7, 2, 3); g.fillRect(rx - 3, by - 8, 3, 8); g.fillRect(rx + 8, by - 8, 3, 8); g.fillStyle = '#5a4a70'; g.fillRect(rx + 1, by - rh, 1, rh - 2); }
+            n++; x += RI(110, 150);
+          }
+        });
+        layer(0.22, g => { // near: fuel tanks, fence, hazard stripes
+          g.fillStyle = pal.near; let x = 0; while (x < TW) { const r = RI(8, 13); disc(g, x + r, by - r + 2, r, pal.near); g.fillRect(x, by - r, r * 2 + 1, r); g.fillStyle = '#2e2440'; g.fillRect(x + 3, by - 2 * r + 4, r * 2 - 5, 1); g.fillStyle = pal.near; x += r * 2 + RI(30, 70); }
+          g.fillStyle = '#20182e'; for (let x2 = 0; x2 < TW; x2 += 5) g.fillRect(x2, by - 10, 1, 10); g.fillRect(0, by - 10, TW, 1);
+          for (let x2 = 0; x2 < TW; x2++) { g.fillStyle = ((x2 >> 2) % 2) ? '#c8a020' : '#1a1206'; g.fillRect(x2, by - 3, 1, 3); }
+        });
+      } else if (zt === 12) { // MOON MODE: on the moon surface - space sky, big Earth, cratered yellow ridges
+        { const [c, g] = mk(TW, H); for (let i = 0; i < 8; i++) { const cx = RI(0, TW), cy = Math.round(top + R(0, ph * 0.5)), r = RI(20, 46), col = pal.neb[i % 3]; for (const dx of [-TW, 0, TW]) dithCircle(g, cx + dx, cy, r, col, q => (1 - q) * 0.45); } out.skyDeco = { c, p: 0.01, drift: 0 }; }
+        const ridge = (g, col, hi, base, amp, f1, seed2, craters) => {
+          for (let x = 0; x < TW; x++) { const hh = Math.round(base + amp * (Math.sin(x * f1 + seed2) * 0.6 + Math.sin(x * f1 * 2.7 + seed2 * 2) * 0.4)); g.fillStyle = col; g.fillRect(x, by - hh, 1, hh + 2); g.fillStyle = hi; g.fillRect(x, by - hh, 1, 1); }
+          for (let i = 0; i < craters; i++) { const cx = RI(6, TW - 6), cy = by - RI(2, Math.max(3, Math.round(base * 0.6))), r = RI(2, 6); g.fillStyle = hi; g.fillRect(cx - r, cy, r * 2, 1); g.fillStyle = '#00000044'; for (let yy = 1; yy <= Math.ceil(r / 2); yy++) g.fillRect(cx - r + yy, cy + yy, (r - yy) * 2, 1); }
+        };
+        layer(0.03, g => ridge(g, pal.rock[0], pal.rock[1], Math.round(ph * 0.22), Math.round(ph * 0.05), 0.012, 1, 10));
+        layer(0.1, g => ridge(g, pal.rock[1], pal.rock[2], Math.round(ph * 0.13), Math.round(ph * 0.04), 0.024, 3, 16));
+        layer(0.22, g => ridge(g, pal.rock[2], pal.rock[3], Math.round(ph * 0.06), Math.round(ph * 0.02), 0.05, 5, 22));
       } else if (zt === 5) {
         { const [c, g] = mk(TW, H); // nebula + planets
           for (let i = 0; i < 9; i++) { const cx = RI(0, TW), cy = Math.round(top + R(0, ph * 0.7)), r = RI(20, 46), col = pal.neb[i % 3]; for (const dx of [-TW, 0, TW]) dithCircle(g, cx + dx, cy, r, col, q => (1 - q) * 0.5); }
@@ -359,6 +451,16 @@
         let py = 2; ctx.fillStyle = c > 2.6 ? '#ff4a6a' : '#c0384e';
         for (let i = 0; i < n; i++) { const u = i / (n - 1), crash = u > 0.6 ? (u - 0.6) * 2.5 * Math.min(1, c) : 0, yy = Math.round(2 + h * (0.3 + Math.sin(i * 1.7 + f.ph) * 0.08 + crash * 0.65)); ctx.fillRect(x + 2 + Math.round(u * w), y + Math.min(f.h - 3, yy), 2, 1); py = yy; }
         if (Math.floor(T * 3 + f.ph) % 2) E.text('-' + (8 + Math.floor((f.ph * 7) % 30)) + '%', x + 2, y + f.h - 7, '#ff5a6a');
+      } else if (f.t === 'leds') {
+        const st = f.step || 4, cols = ['#2aff8a', '#2aff8a', '#ffb020', '#3ab0ff', '#ff3a4a'];
+        for (let i = 0; i < f.n; i++) for (let j = 0; j < 3; j++) { const h = hash(i * 31 + j * 7 + Math.floor(f.ph) * 101 + Math.floor(T * (2 + (i + j) % 3))); if (h < 0.45) continue; ctx.fillStyle = f.dim ? (h > 0.9 ? '#1a6a4a' : '#0e3a2a') : cols[Math.floor(h * 97) % cols.length]; ctx.fillRect(x + j * Math.max(2, Math.floor(f.w / 3)), y + i * st, 1, 1); }
+      } else if (f.t === 'neon') { if (Math.sin(T * 7 + f.ph) > -0.85 || Math.sin(T * 23) > 0) { ctx.fillStyle = 'rgba(42,255,138,0.10)'; ctx.fillRect(x - 2, y - 2, f.w + 4, f.h + 4); } }
+      else if (f.t === 'win') { ctx.fillStyle = Math.sin(T * 1.3 + f.ph) > 0.3 ? '#ff5a3a' : '#7a1a14'; ctx.fillRect(x, y, 2, 3); }
+      else if (f.t === 'torch') { const k = Math.floor(T * 10 + f.ph * 3); ctx.fillStyle = '#ff7a1a'; ctx.fillRect(x - 1, y - 3 - (k % 2), 4, 3 + (k % 2)); ctx.fillStyle = '#ffd04a'; ctx.fillRect(x, y - 2, 2, 2); ctx.fillStyle = 'rgba(255,120,40,0.12)'; ctx.fillRect(x - 5, y - 8, 12, 12); }
+      else if (f.t === 'count') {
+        const left = Math.max(0, Math.ceil(E.zoneLeft || 0)), s2 = 'T-00:' + String(Math.min(99, left)).padStart(2, '0');
+        D.TINY.draw(ctx, f.k % 4 === 0 ? 'LAUNCH' : 'DECIBEL', x + 3, y + 2, '#ffcf6a');
+        D.TINY.draw(ctx, s2, x + 3, y + 9, left <= 10 && Math.floor(T * 4) % 2 ? '#ff5a4a' : '#7cfc9a');
       } else if (f.t === 'eyes') {
         const cyc = (T + f.ph) % 9; if (cyc > 6) return; // hidden part of the time
         const blinkNow = (cyc % 2.7) < 0.12; ctx.fillStyle = cyc < 0.3 || cyc > 5.7 ? '#7a4a1a' : '#ffb347';
@@ -391,13 +493,19 @@
       ctx.drawImage(b.sky, 0, 0);
       if (zt === 3) { const a = 0.05 + 0.05 * Math.sin(T * 2.4); ctx.fillStyle = 'rgba(255,40,40,' + a.toFixed(3) + ')'; ctx.fillRect(0, 0, W, Math.round(by * 0.6)); }
       // stars
-      const stars = E.stars, dense = zt === 5 ? 1 : zt === 6 ? 0.8 : zt === 1 ? 0.6 : zt === 8 ? 0.4 : zt === 2 || zt === 7 ? 0 : 0.3;
+      const stars = E.stars, dense = zt === 5 || zt === 12 ? 1 : zt === 11 ? 0.25 : zt === 9 || zt === 10 ? 0 : zt === 6 ? 0.8 : zt === 1 ? 0.6 : zt === 8 ? 0.4 : zt === 2 || zt === 7 ? 0 : 0.3;
       for (let i = 0; i < stars.length * dense; i++) {
         const s = stars[i], sx = Math.round(((s.x * W * 2 - E.camX * 0.03) % W + W) % W), sy = Math.round(s.y * by * 0.85), tw = Math.sin(T * 2 + s.tw) > 0.6;
         ctx.fillStyle = s.b > 0.85 ? '#FFE500' : zt === 3 ? '#ffb0b0' : '#ffffff';
         if (s.b > 0.93 && tw) { ctx.fillRect(sx - 1, sy, 3, 1); ctx.fillRect(sx, sy - 1, 1, 3); } else if (s.b > 0.3 || tw) ctx.fillRect(sx, sy, 1, 1);
       }
       if (b.skyDeco && zt === 5) tiles(b.skyDeco.p, ox => ctx.drawImage(b.skyDeco.c, ox, 0));
+      if (b.skyDeco && (zt === 11 || zt === 12)) ctx.drawImage(b.skyDeco.c, 0, 0);
+      if (zt === 9) { // scrolling hex columns (far, dim)
+        const hx = '0123456789ABCDEF';
+        for (let i = 0; i < 12; i++) { const sp = 10 + (i % 4) * 5, x = Math.round(((i * 41 - E.camX * 0.04) % (W + 20) + W + 20) % (W + 20) - 10), y0 = (T * sp + i * 37) % (by + 60) - 60;
+          for (let j = 0; j < 8; j++) { const y = Math.round(y0 + j * 7); if (y < top || y > by) continue; const h = hash(i * 13 + j + Math.floor(T * 3 + i)); D.TINY.draw(ctx, hx[Math.floor(h * 16)], x, y, j === 7 ? '#3aff9a' : j > 4 ? '#1e7a4a' : '#0e3a26'); } }
+      }
       if (b.skyDeco && (zt === 6 || zt === 7)) { const o = ((E.camX * b.skyDeco.p + T * b.skyDeco.drift) % TW + TW) % TW; for (let rep = 0; rep * TW - o < W; rep++) ctx.drawImage(b.skyDeco.c, Math.round(rep * TW - o), 0); }
       const drawIcon = () => {
       if (!opt.noIcon) {
@@ -407,7 +515,13 @@
         ctx.drawImage(ic, ix, Math.max(20, iy));
       }
       };
-      if (zt !== 2) drawIcon();
+      if (zt !== 2 && zt !== 10 && zt !== 12) drawIcon();
+      if (zt === 10 && b.skyDeco) { // red storm + lightning, the moon peeks out in front of the clouds
+        lightning(T, dt);
+        if (flash > 0) { ctx.fillStyle = 'rgba(255,120,110,' + (flash * 1.4).toFixed(3) + ')'; ctx.fillRect(0, 0, W, by); ctx.fillStyle = '#ffd0c8'; for (const s of bolt) { const n = Math.max(Math.abs(s[2] - s[0]), Math.abs(s[3] - s[1])); for (let i = 0; i <= n; i++) ctx.fillRect(Math.round(s[0] + (s[2] - s[0]) * i / n), Math.round(s[1] + (s[3] - s[1]) * i / n), 1, 1); } }
+        const o = (((E.camX * b.skyDeco.p + T * b.skyDeco.drift) % TW) + TW) % TW; for (let rep = 0; rep * TW - o < W; rep++) ctx.drawImage(b.skyDeco.c, Math.round(rep * TW - o), 0);
+        drawIcon();
+      }
       if (zt === 5) { // shooting stars + distant rocket with trail
         const k = Math.floor(T / 2.3), ph2 = (T / 2.3) % 1;
         if (ph2 < 0.25) { const sx = W * hash(k), sy = top + ph * 0.4 * hash(k + 9), l = ph2 / 0.25; for (let i = 0; i < 8; i++) { ctx.fillStyle = i < 2 ? '#ffffff' : 'rgba(255,255,255,' + (0.5 - i * 0.05).toFixed(2) + ')'; ctx.fillRect(Math.round(sx + l * 60 - i * 2), Math.round(sy + l * 24 - i * 0.8), 1, 1); } }
@@ -443,10 +557,11 @@
         for (let i = 0; i < 3; i++) { const y = Math.floor(hash(Math.floor(T * 12) * 3 + i) * by), h = 2 + Math.floor(hash(i + Math.floor(T * 5)) * 5); ctx.drawImage(ctx.canvas, 0, y, W, h, Math.round((hash(i * 9 + Math.floor(T * 12)) - 0.5) * 12), y, W, h); }
       }
       if (zt === 5) earth(E.zoneP, by, ph);
+      if (zt === 12) earth(0.25, Math.round(top + ph * 0.3), ph, 0.72);
       ctx.globalAlpha = 1;
     }
     const earthCache = {}, earthOrder = [];
-    function earth(p, by, ph) {
+    function earth(p, by, ph, fx) {
       const r = Math.max(8, Math.round((ph * 0.2) * (1 - p * 0.8))), k = r;
       let c = earthCache[k];
       if (!c) {
@@ -457,7 +572,7 @@
         const im = g.getImageData(0, 0, c.width, c.height), d = im.data; for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy > (r + 1.2) * (r + 1.2)) d[(y * c.width + x) * 4 + 3] = 0; } g.putImageData(im, 0, 0);
         earthCache[k] = c; earthOrder.push(k); while (earthOrder.length > 8) delete earthCache[earthOrder.shift()];
       }
-      ctx.drawImage(c, Math.round(E.W * 0.22 - r), Math.round(by - r * 0.55));
+      ctx.drawImage(c, Math.round(E.W * (fx || 0.22) - r), Math.round(by - r * 0.55));
     }
     return { stats: () => ({ zones: cacheOrder.length, earth: earthOrder.length, marks: Object.keys(markCache).length }), drawZone, reset, prewarm: (z) => get(E.ztype(z), E.zloop(z)), icon: logoIcon, moon: logoMoon, mark: markMask, tiny: D.TINY };
   };

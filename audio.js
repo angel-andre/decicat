@@ -185,6 +185,66 @@
         { n: 8, ch: 'Cm Cm Ab Bb Cm Cm Fm G', d: 'amenB', b: 'R.ROR..RR.RO..R.', a: '0123012301230123', p: 1, l: 'A', dbl: -12 }
       ], loop: 1
     },
+    z9: { // Front-Runner Alley: dark synthwave, pulsing 16th bass, D minor, 116
+      bpm: 116, gain: 1.05, lead: 'saw', bass: 'saw', arp: 'pulse',
+      mel: {
+        A: 'D5/4 F5/4 A5/6 G5/2 F5/4 E5/4 C5/8 Bb4/4 D5/4 F5/6 E5/2 D5/4 C5/4 A4/8 ' +
+           'D5/4 F5/4 A5/6 C6/2 D6/4 C6/4 A5/8 Bb5/4 A5/4 G5/4 F5/4 E5/6 F5/2 E5/4 C#5/4',
+        B: 'A5/8 G5/4 F5/4 G5/8 F5/4 E5/4 F5/6 E5/2 D5/4 F5/4 E5/16 ' +
+           'D6/8 C6/4 Bb5/4 C6/8 Bb5/4 A5/4 Bb5/4 A5/4 G5/4 F5/4 E5/8 C#5/8'
+      },
+      sec: [
+        { n: 4, ch: 'Dm Dm Bb C', d: 'kick', b: 'R.R.R.R.R.R.R.R.', a: '0.1.2.1.', p: 1 },
+        { n: 8, ch: 'Dm Dm Bb C Dm Gm A A', d: 'four', b: 'RRRRRRRRRRRRRRRR', a: '0.1.2.1.0.1.2.1.', p: 1, l: 'A' },
+        { n: 8, ch: 'Bb C Dm Dm Bb C A A', d: 'fourB', b: 'RRORRRORRRORRROR', a: '0123012301230123', p: 1, l: 'B' },
+        { n: 8, ch: 'Dm Dm Bb C Dm Gm A A', d: 'fourB', b: 'RRRRRRRRRRRRRRRR', a: '0213021302130213', p: 1, l: 'A', dbl: -12 }
+      ], loop: 1
+    },
+    z10: { // Bear King: epic boss theme, C minor, 150
+      bpm: 150, gain: 1.1, lead: 'super', bass: 'dist', arp: 'pulse',
+      mel: {
+        A: 'C5/2 C5/2 G5/4 Eb5/2 F5/2 G5/4 Ab5/4 G5/2 F5/2 Eb5/4 D5/4 C5/2 C5/2 G5/4 Ab5/2 Bb5/2 C6/8 B5/4 G5/4 D5/4 ' +
+           'C6/2 C6/2 Bb5/4 Ab5/2 G5/2 Ab5/4 Bb5/4 Ab5/2 G5/2 F5/4 Eb5/4 F5/4 G5/4 Ab5/4 B5/4 C6/8 G5/8',
+        B: 'Eb6/8 D6/4 C6/4 Bb5/8 Ab5/4 G5/4 Ab5/6 G5/2 F5/4 Eb5/4 D5/16 ' +
+           'Eb5/4 F5/4 G5/4 Ab5/4 Bb5/4 C6/4 D6/4 Eb6/4 F6/8 Eb6/4 D6/4 B5/8 G5/8'
+      },
+      sec: [
+        { n: 4, ch: 'Cm Cm Ab G', d: 'half', b: 'R.......R...R.R.', a: '', p: 1 },
+        { n: 8, ch: 'Cm Cm Ab G Cm Cm Ab G', d: 'halfB', b: 'R.RRR.R.R.RRO.R.', a: '0.1.2.1.', p: 1, l: 'A' },
+        { n: 8, ch: 'Ab Bb Cm Cm Ab Bb G G', d: 'brkB', b: 'ROROROROROROROR.', a: '0123012301230123', p: 1, l: 'B', dbl: -12 },
+        { n: 8, ch: 'Cm Cm Ab G Cm Cm Ab G', d: 'brkB', b: 'R.RRR.R.R.RRO.R.', a: '0213021302130213', p: 1, l: 'A', dbl: 12 }
+      ], loop: 1
+    },
+    z11: { // Launch Pad: rising, hopeful, building, G major, 128
+      bpm: 128, gain: 1.0, lead: 'square', bass: 'saw', arp: 'pulse',
+      mel: {
+        A: 'G4/4 B4/4 D5/4 G5/4 F#5/6 E5/2 D5/8 E5/4 G5/4 B5/4 A5/4 G5/6 F#5/2 E5/8 ' +
+           'C5/4 E5/4 G5/4 C6/4 B5/6 A5/2 G5/8 A5/4 B5/4 C6/4 D6/4 D6/16',
+        B: 'B5/6 A5/2 G5/8 C6/6 B5/2 A5/8 D6/6 C6/2 B5/4 G5/4 A5/16 ' +
+           'B5/6 A5/2 G5/8 E6/6 D6/2 C6/8 D6/4 E6/4 F#6/4 A6/4 G6/16'
+      },
+      sec: [
+        { n: 4, ch: 'G D Em C', d: 'light', b: 'R.......R.......', a: '0.1.2.3.', p: 1 },
+        { n: 8, ch: 'G D Em C G D C D', d: 'pop', b: 'R..R..R.R..R.O..', a: '0.1.2.3.2.1.0.1.', p: 1, l: 'A' },
+        { n: 8, ch: 'Em C G D Em C D D', d: 'four', b: 'R.R.R.R.R.R.R.O.', a: '01230123', p: 1, l: 'B' },
+        { n: 8, ch: 'G D Em C G D C D', d: 'euro', b: '.R.R.R.R.R.R.R.R', a: '0123456765432101', p: 1, l: 'A', dbl: 12 }
+      ], loop: 1
+    },
+    mm: { // Moon Mode: fast, bright, low-gravity rave, F major, 166
+      bpm: 166, gain: 1.0, lead: 'super', bass: 'saw', arp: 'pulse',
+      mel: {
+        A: 'F5/2 A5/2 C6/2 F6/2 E6/4 C6/4 D6/2 C6/2 A5/2 F5/2 G5/8 Bb5/2 D6/2 F6/2 D6/2 C6/4 A5/4 G5/2 A5/2 Bb5/2 C6/2 A5/8 ' +
+           'F5/2 A5/2 C6/2 F6/2 G6/4 F6/4 E6/2 F6/2 G6/2 A6/2 C6/8 Bb5/2 C6/2 D6/2 F6/2 E6/4 D6/4 C6/4 E6/4 F6/8',
+        B: 'D6/6 C6/2 A5/8 Bb5/6 C6/2 D6/8 C6/6 Bb5/2 A5/4 G5/4 A5/16 ' +
+           'D6/4 E6/4 F6/8 G6/4 F6/4 E6/8 F6/4 E6/4 D6/4 C6/4 C6/16'
+      },
+      sec: [
+        { n: 4, ch: 'F C Dm Bb', d: 'kick', b: 'R.R.R.R.R.R.R.R.', a: '0123456765432101', p: 1 },
+        { n: 8, ch: 'F C Dm Bb F C Bb C', d: 'euro', b: '.R.R.R.R.R.R.R.R', a: '0123456765432101', p: 1, l: 'A' },
+        { n: 8, ch: 'Dm Bb F C Dm Bb C C', d: 'euro', b: 'RRRRRRRRRRRRRRRR', a: '0246024602460246', p: 1, l: 'B', dbl: -12 },
+        { n: 8, ch: 'F C Dm Bb F C Bb C', d: 'euro', b: '.R.R.R.R.R.R.R.R', a: '0123456765432101', p: 1, l: 'A', dbl: 12 }
+      ], loop: 1
+    },
     boost: { // 40x: rising, intense, 172
       bpm: 172, gain: 1.0, lead: 'super', bass: 'saw', arp: 'pulse',
       mel: {
@@ -590,7 +650,32 @@
     pw_dia(t) { [1319, 1760, 2093, 2637, 3136].forEach((f, i) => { const g = sOsc('triangle', f, 0, t + i * 0.04, 0.2, 0.1); send(g, 0.35, 0.3); }); },
     pwEnd(t) { sOsc('p25', 880, 440, t, 0.12, 0.08); },
     shieldBreak(t) { sNoise(t, 0.3, 0.25, 'bandpass', 3000, 800, 1.5); [1047, 784, 523].forEach((f, i) => sOsc('square', f, 0, t + i * 0.05, 0.08, 0.1)); E.duck(t, 0.6, 0.2); },
-    top10(t) { [1319, 1568, 1976, 2637].forEach((f, i) => { const g = sOsc('triangle', f, 0, t + i * 0.06, 0.25, 0.14); send(g, 0.3, 0.3); }); }
+    top10(t) { [1319, 1568, 1976, 2637].forEach((f, i) => { const g = sOsc('triangle', f, 0, t + i * 0.06, 0.25, 0.14); send(g, 0.3, 0.3); }); },
+    // v5: stages 8-10, rocket ending, trophies
+    ghostWarn(t) { [0, 0.14].forEach(d => { sOsc('square', 220, 110, t + d, 0.12, 0.1); sOsc('square', 233, 116, t + d, 0.12, 0.06); }); sNoise(t, 0.35, 0.06, 'bandpass', 900, 2600, 6); },
+    ghostPass(t) { sNoise(t, 0.3, 0.12, 'bandpass', 600, 2400, 3); sOsc('sawtooth', 160, 90, t, 0.25, 0.06); },
+    roar(t) {
+      const ctx = E.ctx, o = mkOsc('sawtooth', 55, t, t + 1.0), o2 = mkOsc('sawtooth', 58, t, t + 1.0), lp = ctx.createBiquadFilter(), g = ctx.createGain();
+      lp.type = 'lowpass'; lp.frequency.setValueAtTime(300, t); lp.frequency.linearRampToValueAtTime(1400, t + 0.35); lp.frequency.linearRampToValueAtTime(250, t + 0.95); lp.Q.value = 5;
+      g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.32, t + 0.08); g.gain.setTargetAtTime(0.0001, t + 0.7, 0.1);
+      o.frequency.linearRampToValueAtTime(80, t + 0.4); o.frequency.linearRampToValueAtTime(45, t + 0.95); o2.frequency.linearRampToValueAtTime(76, t + 0.4);
+      const ws = ctx.createWaveShaper(); ws.curve = distCurve; o.connect(ws); o2.connect(ws); ws.connect(lp); lp.connect(g); g.connect(E.g.sfx);
+      sNoise(t, 0.9, 0.12, 'bandpass', 500, 200, 2); E.duck(t, 0.5, 0.8);
+    },
+    throwC(t) { sNoise(t, 0.25, 0.14, 'bandpass', 800, 3000, 2); sOsc('triangle', 500, 900, t, 0.2, 0.08); },
+    shock(t) { sOsc('sine', 90, 30, t, 0.5, 0.5); sNoise(t, 0.4, 0.3, 'lowpass', 1800, 120); sOsc('square', 120, 50, t, 0.2, 0.2); E.duck(t, 0.5, 0.3); },
+    kingHit(t) { sOsc('square', 400, 90, t, 0.22, 0.3); sNoise(t, 0.2, 0.3, 'lowpass', 2500, 300); [784, 1047].forEach((f, i) => sOsc('p25', f, 0, t + 0.08 + i * 0.07, 0.12, 0.12)); E.duck(t, 0.5, 0.2); },
+    kingDown(t) {
+      [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => { const g = sOsc('p25', f, 0, t + 0.3 + i * 0.09, i === 6 ? 0.6 : 0.12, 0.15); send(g, 0.3, 0.3); });
+      sOsc('sawtooth', 200, 40, t, 0.6, 0.18); sNoise(t, 0.6, 0.25, 'lowpass', 2000, 100); E.duck(t, 0.35, 1.2);
+    },
+    meteor(t) { sOsc('sine', 2400, 500, t, 0.6, 0.08); sNoise(t, 0.6, 0.06, 'bandpass', 3000, 700, 4); },
+    beep(t) { sOsc('square', 880, 0, t, 0.16, 0.16); },
+    go(t) { const g = sOsc('square', 1760, 0, t, 0.5, 0.16); send(g, 0.3, 0.4); },
+    liftoff(t) { sNoise(t, 2.6, 0.35, 'lowpass', 300, 2400, 1); sNoise(t + 0.1, 2.4, 0.2, 'bandpass', 200, 900, 1.5); sOsc('sawtooth', 50, 120, t, 2.2, 0.16); sOsc('sine', 60, 30, t, 1.6, 0.5); E.duck(t, 0.55, 2.0); },
+    firework(t) { sNoise(t, 0.12, 0.22, 'lowpass', 1500, 200); for (let i = 0; i < 6; i++) sNoise(t + 0.12 + i * 0.05, 0.04, 0.08, 'highpass', 5000 + i * 300); sOsc('triangle', 1600, 800, t + 0.1, 0.3, 0.05); },
+    touchdown(t) { sOsc('sine', 140, 40, t, 0.6, 0.5); sNoise(t, 0.6, 0.25, 'lowpass', 900, 100); },
+    trophy(t) { [1047, 1319, 1568, 2093].forEach((f, i) => { const g = sOsc('triangle', f, 0, t + i * 0.07, i === 3 ? 0.5 : 0.15, 0.13); send(g, 0.35, 0.3); }); }
   };
   E.sfx = function (name, at) { if (!E.ctx || !SFX[name]) return; SFX[name](at !== undefined ? at : E.ctx.currentTime + 0.005); };
 

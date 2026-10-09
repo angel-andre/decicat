@@ -1,6 +1,6 @@
 /* DECICAT - A Decibel Adventure
  * Endless one-touch pixel runner. Vanilla JS + canvas, no deps.
- * Decicat art & idea by @doncastro.
+ * Original Decicat concept by @doncastro. Game by @angelataptos.
  */
 (function (D) {
   'use strict';
@@ -35,7 +35,7 @@
   })() : null;
 
   // ---------- utils ----------
-  const VERSION = 'v4.0';
+  const VERSION = 'v5.0';
   const cryptoSeed = () => (window.crypto && crypto.getRandomValues) ? (crypto.getRandomValues(new Uint32Array(1))[0] | 0) || 1 : ((Math.random() * 2147483647) | 0) || 1;
   let seed = DBG.seed || cryptoSeed();
   function rnd() { seed = (seed + 0x6D2B79F5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
@@ -156,7 +156,11 @@
   let rainLvl = 0;
   function setRain(l) { if (l !== rainLvl) { rainLvl = l; Snd.amb('rain', l); } }
   function zoneRain(z) { const t = ztype(z); return t === 2 ? 0.09 : t === 3 ? 0.06 : 0; }
-  function zoneTrack(z) { const L = zloop(z); return ['z' + ztype(z), { tr: L * 2, tm: 1 + 0.04 * L }]; }
+  const MM_TRACKS = ['mm', 'z10', 'z9', 'z4', 'mm', 'z8', 'z11', 'z7']; // Moon Mode cycles remixes (transposed + faster)
+  function zoneTrack(z) {
+    if (z > STAGES) { const k = z - STAGES - 1; return [MM_TRACKS[k % MM_TRACKS.length], { tr: k === 0 ? 0 : [0, 2, -3, 5, 3, -2, 1, 4][k % 8], tm: 1.06 + 0.02 * Math.min(6, k) }]; }
+    const L = zloop(z); return ['z' + ztype(z), { tr: L * 2, tm: 1 + 0.04 * L }];
+  }
   function playZoneMusic(q, from) { const [n, o] = zoneTrack(zone); Snd.music(n, Object.assign({ q, from }, o)); }
 
   // ---------- names ----------
@@ -189,7 +193,7 @@
     async top() { return this._load().slice(0, TOPN); }
     async submit(r) {
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-      const list = this._load(); list.push({ id, name: r.name, score: Math.floor(r.score), runMs: r.runMs, at: Date.now() });
+      const list = this._load(); list.push({ id, name: r.name, score: Math.floor(r.score), runMs: r.runMs, at: Date.now(), moon: r.moon ? 1 : 0 });
       list.sort((a, b) => b.score - a.score || a.at - b.at);
       const top = list.slice(0, TOPN); LS.set(this.key, JSON.stringify(top));
       return { id, rank: top.findIndex(e => e.id === id) + 1, top };
@@ -216,7 +220,7 @@
       return r;
     }
     async top(tries) { const r = await this.req('/api/top', {}, tries === undefined ? 3 : tries); if (!r.ok) throw new Error('top ' + r.status); return { top: (r.j.top || []).slice(0, TOPN), total: r.j.total || 0 }; }
-    post(it, tries) { return this.req('/api/score', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: it.name, score: it.score, runMs: it.runMs, nonce: it.nonce, replay: it.replay || null, v: it.v || null }) }, tries); }
+    post(it, tries) { return this.req('/api/score', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: it.name, score: it.score, runMs: it.runMs, nonce: it.nonce, replay: it.replay || null, v: it.v || null, moon: it.moon ? 1 : 0 }) }, tries); }
   }
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const transient = st => st === 0 || st === 408 || st === 429 || st >= 500;
@@ -242,7 +246,7 @@
     async submit(r) {
       if (!this.remote) return Object.assign({ status: 'local', ranked: true }, await local.submit(r));
       const rp = r.replay && JSON.stringify(r.replay).length < 60000 ? r.replay : null;
-      const it = { name: r.name, score: Math.floor(r.score), runMs: Math.floor(r.runMs), nonce: mkNonce(), at: Date.now(), replay: rp, v: VERSION };
+      const it = { name: r.name, score: Math.floor(r.score), runMs: Math.floor(r.runMs), nonce: mkNonce(), at: Date.now(), replay: rp, v: VERSION, moon: r.moon ? 1 : 0 };
       this._setQ(this._q().concat([it]));
       return this._send(it, 3);
     },
@@ -268,14 +272,21 @@
     { name: 'TO THE MOON', sky: ['#03020a', '#080614', '#100b24', '#1b1438', '#2a1f50'], city: null, tint: null }, // retired as a stage (kept for a future ending / Moon Mode)
     { name: 'WHALE WATERS', sky: ['#01040c', '#03101f', '#061c33', '#0a2a47', '#103a5c'], city: null, tint: null },
     { name: 'SHORT SQUEEZE', sky: ['#0d0806', '#1a0f09', '#2a170c', '#3b2010', '#4e2c16'], city: null, tint: null },
-    { name: 'FLASH CRASH', sky: ['#050309', '#0b0716', '#140b25', '#1e0f35', '#2b1247'], city: null, tint: null }
+    { name: 'FLASH CRASH', sky: ['#050309', '#0b0716', '#140b25', '#1e0f35', '#2b1247'], city: null, tint: null },
+    { name: 'FRONT-RUNNER ALLEY', sky: ['#010305', '#03080c', '#061014', '#0a181e', '#0e2028'], city: null, tint: null },
+    { name: 'BEAR KING', sky: ['#0a0204', '#16040a', '#240810', '#340c14', '#4a1218'], city: null, tint: null },
+    { name: 'LAUNCH PAD', sky: ['#1a1440', '#34265c', '#6a4274', '#c0706a', '#f0a868'], city: null, tint: null },
+    { name: 'MOON MODE', sky: ['#03020a', '#080614', '#100b24', '#1b1438', '#2a1f50'], city: null, tint: null }
   ];
   // stage rotation (internal zone types): 1 ORDER BOOK, 2 FUNDING STORM, 3 LIQUIDATION RAIN, 4 BEAR MARKET,
   // 6 WHALE WATERS, 7 SHORT SQUEEZE, 8 FLASH CRASH -> then loops ("II", "III"...) with harder tuning
-  const ROT = [1, 2, 3, 4, 6, 7, 8];
-  function ztype(z) { return ROT[(z - 1) % ROT.length]; }
-  function zloop(z) { return Math.floor((z - 1) / ROT.length); }
-  function zoneName(z) { const L = zloop(z); return ZONES[ztype(z)].name + (L ? ' ' + ['II', 'III', 'IV', 'V'][Math.min(3, L - 1)] + (L > 4 ? '+' : '') : ''); }
+  // v5: 9 FRONT-RUNNER ALLEY, 10 BEAR KING (boss), 11 LAUNCH PAD -> rocket ending -> 12 MOON MODE (endless, zones 11+)
+  const ROT = [1, 2, 3, 4, 6, 7, 8, 9, 10, 11], STAGES = ROT.length;
+  function ztype(z) { return z === 0 ? 5 : z <= STAGES ? ROT[z - 1] : 12; } // (0 = the retired TO THE MOON sky, used by the ending)
+  function zloop(z) { return 0; } // (v4 loops are replaced by Moon Mode; kept for the background API)
+  function moonK(z) { return Math.max(0, z - STAGES - 1); } // Moon Mode lap index (0 = first)
+  function zoneName(z) { return z <= STAGES ? ZONES[ztype(z)].name : 'MOON MODE' + (z > STAGES + 1 ? ' ' + (z - STAGES) : ''); }
+  function stageLabel(z) { return z <= STAGES ? 'STAGE ' + z : 'MOON MODE'; }
   function zp(z) {
     const t = ztype(z), L = zloop(z);
     const base = [null,
@@ -286,8 +297,16 @@
       { speed: 138, gap: [0.2, 0.42], cl: [3, 5], red: 0.16, gapRed: 0.12, bear: 0.2, fall: [2.6, 3.8], wind: false },
       { speed: 114, gap: [0.18, 0.36], cl: [3, 5], red: 0.08, gapRed: 0.05, bear: 0, fall: 0, wind: false, whale: 0.34 },
       { speed: 120, gap: [0.18, 0.38], cl: [3, 5], red: 0.1, gapRed: 0.06, bear: 0.12, fall: 0, wind: false, press: 0.32 },
-      { speed: 126, gap: [0.18, 0.38], cl: [3, 5], red: 0.1, gapRed: 0.05, bear: 0, fall: 0, wind: false, flip: 1 }
-    ][t];
+      { speed: 126, gap: [0.18, 0.38], cl: [3, 5], red: 0.1, gapRed: 0.05, bear: 0, fall: 0, wind: false, flip: 1 },
+      { speed: 124, gap: [0.18, 0.38], cl: [3, 5], red: 0.08, gapRed: 0.04, bear: 0, fall: 0, wind: false, shadow: [2.6, 3.8] },
+      { speed: 112, gap: [0.16, 0.3], cl: [4, 6], red: 0.03, gapRed: 0, bear: 0, fall: 0, wind: false, boss: 1 },
+      { speed: 132, gap: [0.18, 0.4], cl: [3, 6], red: 0.1, gapRed: 0.07, bear: 0.55, fall: 0, wind: false, launch: 1 },
+      null
+    ][t] || (function () { // 12 MOON MODE: endless and hardest; cycles hazards from every stage (fl = lap % 4)
+      const k = moonK(z), fl = k % 4;
+      return { speed: 146 + 5 * Math.min(k, 12), gap: [0.22, 0.46], cl: [3, 5], red: 0.2, gapRed: 0.12, bear: fl === 3 ? 0 : fl === 1 ? 0.2 : 0.38,
+        fall: fl === 0 || fl === 2 ? [1.7, 2.6] : 0, wind: fl === 1, press: fl === 2 ? 0.3 : 0, flip: fl === 3 ? 1 : 0, shadow: fl === 1 ? [2.6, 3.8] : 0, moon: 1, L2: 1 + Math.floor(k / 4) };
+    })();
     const p = Object.assign({}, base, { t, L });
     // gentle in-zone ramp: each zone opens a little easier and ends a little harder (f = 0..1 through the zone)
     const f = z === zone ? clamp(zoneT / ZONE_T, 0, 1) : 0;
@@ -298,7 +317,7 @@
     if (L > 0) {
       p.speed += 12 * L; p.red = Math.min(0.35, p.red + 0.05 * L); p.gap = [p.gap[0] + 0.02 * L, Math.min(0.56, p.gap[1] + 0.03 * L)];
       p.bear = t >= 6 ? p.bear : Math.max(p.bear, 0.25);
-      if (t !== 8) { if (!p.fall) p.fall = [3.4, 4.8]; else p.fall = [p.fall[0] * 0.8, p.fall[1] * 0.8]; }
+      if (t !== 8 && t !== 10) { if (!p.fall) p.fall = [3.4, 4.8]; else p.fall = [p.fall[0] * 0.8, p.fall[1] * 0.8]; }
       p.wind = p.wind || t === 1;
     }
     return p;
@@ -319,6 +338,10 @@
   // v4 stage mechanics: grav = +1 / -1 (FLASH CRASH flips), presses (SHORT SQUEEZE), flips, items (power-ups)
   let grav = 1, inU = false, presses = [], flips = [], items = [], flipWarn = null, clustersSinceSpecial = 0, nextFlipX = 0;
   let shieldOn = false, pwSpawned = {}; const pwT = { mag: 0, slow: 0, dia: 0 };
+  // v5: front-runner shadows (replay your own heights ~0.6-1.0 s late), the Bear King, the launch pad + rocket ending
+  let shadows = [], shadowTimer = 0, boss = null, waves = [], launchPad = false, reachedMoon = false, endInfo = null, lastGY = 0, gTime = 0;
+  const yHist = new Float32Array(128); // cat y per sim frame (ring buffer, bounded)
+  let RS = null; // per-run stats for trophies (cosmetic, never feeds back into the sim)
   const FM2 = () => playTop + baseY; // gravity mirror: y -> FM2 - y
   const waterY = () => baseY - 20;
   // the sea stays while WHALE WATERS is on or any whale from it is still around (zone boundaries mid-ride)
@@ -367,8 +390,9 @@
     state = 'play'; stateT = 0; paused = false; pressing = false; runRec = null;
     resetRun(rp.seed, rp.z0 || 1);
     let guard = 0; const max = 60 * 60 * 120;
-    while (state === 'play' && guard++ < max) update(FIX);
-    const out = { score: score(), frames: simFrame, dist: Math.floor(dist / 2), bonus, coins: coinsN, zone, death: lastDeath, runMs: Math.round(runT * 1000) };
+    // the rocket ending + YOU MADE IT screen freeze the sim (no inputs are read), so a re-sim jumps straight into Moon Mode
+    while ((state === 'play' || state === 'ending' || state === 'moonwin') && guard++ < max) { if (state !== 'play') { startMoonMode(); continue; } update(FIX); }
+    const out = { score: score(), frames: simFrame, dist: Math.floor(dist / 2), bonus, coins: coinsN, zone, death: lastDeath, runMs: Math.round(runT * 1000), reachedMoon };
     replaying = null; MUTE = false; ZONE_T = prevZT; DBG.god = prevGod; DBG.boost = prevBoost; state = prevSt === 'play' ? 'title' : prevSt; resize();
     return out;
   }
@@ -380,7 +404,9 @@
     seed = seedIn || DBG.seed || cryptoSeed(); runSeed = seed; simFrame = 0; inQ.length = 0;
     plats = []; coins = []; powers = []; bears = []; fallers = []; parts = []; floats = [];
     camX = 0; dist = 0; bonus = 0; coinsN = 0; runT = 0; zone = z0 || DBG.zone; prevZone = zone; zoneFade = 1; zoneT = 0;
-    moonPending = ztype(zone) === 5; moonSeen = false; padMade = false;
+    moonPending = false; moonSeen = false; padMade = false;
+    pendingBanner = null; shadows = []; gTime = 0; shadowTimer = 2; boss = null; waves = []; launchPad = false; reachedMoon = false; endInfo = null; yHist.fill(0); csCam = null;
+    RS = { jumps: 0, stomps: 0, boosts: 0, coins: 0, pws: {}, hits: 0, stageHits: 0, stagePw: 0, dodged: 0, squeezes: 0, flips: 0, whales: 0, moonT: 0 };
     grav = 1; inU = false; presses = []; flips = []; items = []; flipWarn = null; clustersSinceSpecial = 0; nextFlipX = 0;
     shieldOn = false; pwSpawned = {}; pwT.mag = 0; pwT.slow = 0; pwT.dia = 0;
     powerTimer = rand(10, 16); fallTimer = 2; gustTimer = rand(2, 4); gust = 0; gustT = 0; shake = 0; result = null; lev = 1;
@@ -390,7 +416,8 @@
     lastTop = baseY - 64;
     let x = -20;
     while (x < cat.sx + 120) { const w = randi(17, 21); plats.push(candle(x, lastTop, w, randi(18, 34), false)); x += w + randi(3, 4); }
-    nextX = x; cat.y = lastTop; resetRunHook();
+    nextX = x; cat.y = lastTop; lastGY = lastTop; resetRunHook();
+    if (ztype(zone) === 10) bossStart();
     while (nextX < camX + W + 100) genCluster();
     banner = { big: zoneName(zone), small: 'ZONE ' + zone, t: 0, dur: 2.2 };
     if (DBG.boost) startBoost();
@@ -410,6 +437,7 @@
       if (p.press && clustersSinceSpecial >= 2 && rnd() < p.press) { clustersSinceSpecial = 0; genPress(p); return; }
       if (p.flip && nextX >= nextFlipX && clustersSinceSpecial >= 3) { clustersSinceSpecial = 0; genFlip(p); return; }
     }
+    if (p.launch && cat.boost <= 0 && (launchPad || zoneT > ZONE_T - 7)) { genPad(p); return; }
     let gap = rand(p.gap[0], p.gap[1]) * p.speed;
     let x = nextX + gap;
     let n = randi(p.cl[0], p.cl[1]);
@@ -473,11 +501,19 @@
     if (!safe && cs.length >= 3 && rnd() < p.bear) {
       const c = cs[cs.length - 1];
       const roll = rnd();
-      const type = (p.t === 4 || p.L > 0) ? (roll < 0.35 ? 'charge' : roll < 0.6 ? 'leap' : 'walk') : 'walk';
+      const type = (p.t === 4 || p.t === 11 || p.t === 12 || p.L > 0) ? (roll < 0.35 ? 'charge' : roll < 0.6 ? 'leap' : 'walk') : 'walk';
       bears.push({ x: c.x + c.w / 2, y: c.y, vy: 0, vx: -randi(16, 26), type, g: true, t: rand(0, 1), dead: false, flip: false, charged: false, alive: true });
       if (p.t === 4 && cs.length >= 5 && rnd() < 0.45) bears.push({ x: cs[cs.length - 3].x + 4, y: cs[cs.length - 3].y, vy: 0, vx: -randi(14, 22), type: 'walk', g: true, t: rand(0, 1), dead: false, flip: false, alive: true });
     }
     nextX = x1; lastTop = prevGreenTop;
+  }
+  // LAUNCH PAD: the last seconds of stage 10 are one long flat steel pad; the ROCKET waits where you'll be at the bell
+  function genPad(p) {
+    if (!launchPad) { launchPad = true; nextX += randi(14, 20); }
+    let x = nextX; const y = lastTop;
+    for (let i = 0; i < 6; i++) { const c = candle(x, y, 24, randi(40, 56), false); c.pad = true; plats.push(c); x += 24; }
+    if (rnd() < 0.5) for (let i = 0; i < 3; i++) coins.push({ x: nextX + 30 + i * 30, y: y - 30 });
+    nextX = x;
   }
   function genMoon(p) {
     moonPending = false;
@@ -585,6 +621,7 @@
   function die(why) {
     if (cat.dead) return;
     lastDeath = why;
+    if (RS && !DBG.god) RS.hits++;
     if (DBG.god) { if (why === 'fell') { cat.y = boostY() + 40; cat.vy = 0; cat.inv = 1; } return; }
     lastReplay = packReplay(); runRec = null;
     cat.dead = true; cat.vy = why === 'fell' ? -120 : -260; cat.g = false; state = 'dying'; stateT = 0; shake = 0.35; lev = 1;
@@ -594,10 +631,10 @@
   async function finishRun() {
     const sc = score(), runMs = Math.round(runT * 1000);
     const isBest = sc > best; if (isBest) { best = sc; LS.set('decicat_best', String(best)); }
-    const R = result = { score: sc, best, isBest, pending: true, status: null, rank: 0, ranked: true, top: Scores.lastTop || [], board: 'loading', id: null, zone };
+    const R = result = { score: sc, best, isBest, pending: true, status: null, rank: 0, ranked: true, top: Scores.lastTop || [], board: 'loading', id: null, zone, runMs, moon: reachedMoon };
     Snd.music('gameover', { q: 'now', then: 'results', restart: true });
     if (isBest && sc > 0) Snd.sfx('best');
-    let r; try { r = await Scores.submit({ name: playerName(), score: sc, runMs, replay: lastReplay }); } catch (e) { r = { status: 'queued', top: Scores.lastTop || [] }; }
+    let r; try { r = await Scores.submit({ name: playerName(), score: sc, runMs, replay: lastReplay, moon: reachedMoon }); } catch (e) { r = { status: 'queued', top: Scores.lastTop || [] }; }
     applyResult(R, r);
     if (r.status === 'ok') Scores.flush();
   }
@@ -624,7 +661,7 @@
 
 
   // ---------- input ----------
-  const UI = { name: null, music: null, sfx: null, again: null, menu: null, retry: null };
+  const UI = { name: null, music: null, sfx: null, again: null, menu: null, retry: null, share: null, skinL: null, skinR: null, ach: null, back: null, prev: null, next: null };
   const inRect = (r, x, y) => r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
   function toLogical(e) { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) / b.width * W, y: (e.clientY - b.top) / b.height * H }; }
   function press(lx, ly) {
@@ -634,9 +671,19 @@
     if (lx !== undefined && inRect(UI.music, lx, ly) && !hadAudio && !Snd.musicOn) { AU.setMusic(true); AU.setSfx(true); Snd.sfx('click'); if (state === 'title') Snd.music('title', { q: 'now' }); return; }
     if (lx !== undefined && inRect(UI.music, lx, ly)) { Snd.toggleMusic(); Snd.sfx('click'); if (state === 'title') Snd.music('title', { q: 'now' }); return; }
     if (lx !== undefined && inRect(UI.sfx, lx, ly)) { Snd.toggleSfx(); Snd.sfx('click'); return; }
+    if (state === 'ach') {
+      if (lx === undefined || inRect(UI.back, lx, ly)) { Snd.sfx('click'); state = 'title'; stateT = 2; return; }
+      if (inRect(UI.prev, lx, ly)) { achPage--; Snd.sfx('click'); } else if (inRect(UI.next, lx, ly)) { achPage++; Snd.sfx('click'); }
+      return;
+    }
+    if (state === 'ending') { if (stateT > 0.5) { endInfo.skipped = true; Snd.sfx('click'); toMoonWin(); } return; }
+    if (state === 'moonwin') { if (stateT > 1) { Snd.sfx('click'); startMoonMode(); } return; }
     if (state === 'title') {
       if (stateT < 0.25 || performance.now() - nameClosedAt < 350) return;
       if (lx !== undefined && inRect(UI.name, lx, ly)) { Snd.sfx('click'); Snd.music('title', { q: 'now' }); openNameEditor(); return; }
+      if (lx !== undefined && inRect(UI.skinL, lx, ly)) { cycleSkin(-1); Snd.sfx('click'); return; }
+      if (lx !== undefined && inRect(UI.skinR, lx, ly)) { cycleSkin(1); Snd.sfx('click'); return; }
+      if (lx !== undefined && inRect(UI.ach, lx, ly)) { Snd.sfx('click'); state = 'ach'; stateT = 0; achPage = 0; return; }
       Snd.sfx('click'); startGame(); return;
     }
     if (paused) { paused = false; Snd.resume(); return; }
@@ -644,6 +691,7 @@
     if (state === 'over' && stateT > 0.7) {
       if (result && result.claimShow) { if (result.claimT > 1.2) { result.claimShow = false; Snd.sfx('click'); } return; }
       if (lx !== undefined && inRect(UI.retry, lx, ly) && result && (result.status === 'queued' || result.board === 'error')) { Snd.sfx('click'); retryResult(); return; }
+      if (lx !== undefined && inRect(UI.share, lx, ly)) { Snd.sfx('click'); shareX(); return; }
       if (lx === undefined || inRect(UI.again, lx, ly)) { Snd.sfx('click'); startGame(); return; }
       if (inRect(UI.menu, lx, ly)) { Snd.sfx('click'); state = 'title'; stateT = 0.3; Snd.music('title', { q: 'now' }); return; }
     }
@@ -655,7 +703,7 @@
     else if (cat.air > 0) { cat.air--; doJump(DJUMP); Snd.sfx('djump'); for (let i = 0; i < 6; i++) parts.push({ x: cat.x + rand(-6, 6), y: cat.y, vx: rand(-30, 30), vy: rand(10, 50) * grav, l: 0.3, c: '#d8ccff', s: 1 }); }
     else cat.buf = 0.12;
   }
-  function doJump(v) { cat.vy = -v * (inU ? 1 : grav); cat.g = false; cat.coy = 0; cat.holdT = 0; cat.rising = true; cat.buf = 0; }
+  function doJump(v) { if (RS && !RS.jumps++) ach('hop'); cat.vy = -v * (inU ? 1 : grav); cat.g = false; cat.coy = 0; cat.holdT = 0; cat.rising = true; cat.buf = 0; }
   function jumpRelease() { if (cat.rising && cat.vy * (inU ? 1 : grav) < -120 && cat.holdT > 0.07) cat.vy *= 0.5; cat.rising = false; }
 
   // Audio unlock: iOS/Safari only treats touchend / pointerup / click / keydown as user activation (not touchstart / touch pointerdown)
@@ -678,6 +726,7 @@
     const k = e.code;
     if (k === 'Space' || k === 'ArrowUp' || k === 'KeyW' || k === 'Enter') { e.preventDefault(); if (!e.repeat) press(); }
     else if (k === 'KeyM') Snd.toggleAll();
+    else if (k === 'Escape' && state === 'ach') { state = 'title'; stateT = 2; }
     else if ((k === 'KeyP' || k === 'Escape') && state === 'play') { paused = !paused; if (paused) Snd.suspend(); else Snd.resume(); }
   });
   window.addEventListener('keyup', e => { if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Enter') release(); });
@@ -686,7 +735,7 @@
   // resize is debounced: dragging a window edge or toggling fullscreen fires dozens of events, and each real size change
   // re-renders the zone backgrounds for the new size; caches for the old size are released at once
   let resizeT = 0;
-  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { const w0 = W, h0 = H; resize(); if (W !== w0 || H !== h0) { BG.reset(); if (state === 'play' && runRec) runRec.rs.push([simFrame, W, H]); } if (state === 'play' || state === 'dying') { cat.sx = Math.round(W * 0.27); } }, 120); });
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { const w0 = W, h0 = H; resize(); if (W !== w0 || H !== h0) { BG.reset(); if ((state === 'play' || state === 'ending' || state === 'moonwin') && runRec) runRec.rs.push([simFrame, W, H]); } if (state === 'play' || state === 'dying') { cat.sx = Math.round(W * 0.27); } }, 120); });
 
   // ---------- name editor (DOM overlay) ----------
   let nameOpen = false;
@@ -716,8 +765,9 @@
   function update(dt) {
     gameClock += dt;
     stateT += dt;
-    if (state === 'title' || state === 'over' || state === 'gate') { animBg(dt); updParts(dt); return; }
+    if (state === 'title' || state === 'over' || state === 'gate' || state === 'ach') { animBg(dt); updParts(dt); return; }
     if (paused) return;
+    if (state === 'ending' || state === 'moonwin') { updEnding(dt); return; }
     if (state === 'dying') {
       cat.vy = Math.min(cat.vy + GRAV * dt, MAXFALL); cat.y += cat.vy * dt; cat.rot += dt * 8;
       updParts(dt); shake = Math.max(0, shake - dt);
@@ -736,12 +786,23 @@
     if (flipWarn) { flipWarn.t -= dt; if (flipWarn.t <= 0) flipWarn = null; }
     const p = zp(zone);
     runT += dt; zoneT += dt; powerTimer -= dt; zoneFade = Math.min(1, zoneFade + dt / 1.5);
+    if (zone > STAGES && RS) { RS.moonT += dt; if (RS.moonT >= 60) ach('moonwalk'); }
     if (zoneT >= ZONE_T) {
-      prevZone = zone; zone++; zoneT = 0; zoneFade = 0; powerTimer = rand(0.25, 0.6) * ZONE_T; pwSpawned = {}; clustersSinceSpecial = 0;
-      banner = { big: zoneName(zone), small: 'ZONE ' + zone, t: 0, dur: 2.4 };
-      if (ztype(zone) === 5) moonPending = true;
+      if (ztype(zone) === 10) bossTimeout();
+      if (RS) { if (RS.stageHits === 0 && RS.stagePw === 0 && zone >= 4) ach('nohit'); RS.stageHits = 0; RS.stagePw = 0; if (zone === 2) ach('storm'); }
+      if (zone === STAGES) { reachEnding(); return; }
+      prevZone = zone; zone++; zoneT = 0; zoneFade = 0; powerTimer = rand(0.25, 0.6) * ZONE_T; pwSpawned = {}; clustersSinceSpecial = 0; launchPad = false;
+      banner = { big: zoneName(zone), small: stageLabel(zone), t: 0, dur: 2.4 };
+      if (ztype(zone) === 10) bossStart();
+      if (ztype(zone) === 9) shadowTimer = 2.5;
       Snd.sfx('zone'); if (cat.boost <= 0) playZoneMusic('bar', 'A'); setRain(zoneRain(zone));
     }
+    yHist[simFrame & 127] = cat.y;
+    if (p.shadow && cat.boost <= 0 && runT > 3 && !launchPad) {
+      shadowTimer -= dt;
+      if (shadowTimer <= 0) { shadowTimer = rand(p.shadow[0], p.shadow[1]); shadows.push({ x: camX - 24, d: randi(36, 60), rel: 115 + 6 * (p.L2 || 0), warn: 0.9, f: 0, passed: false, y: cat.y }); Snd.sfx('ghostWarn'); }
+    }
+    if (boss) updBoss(dt, p);
     const mul = cat.boost > 0 ? BOOST_MUL : 1;
     const v = p.speed * mul;
     // wind gusts
@@ -757,7 +818,8 @@
         fallTimer = rand(p.fall[0], p.fall[1]);
         // aim ahead of the cat so it lands (and sticks) before the cat arrives: dodge by jumping over
         const lead = p.speed * rand(1.75, 2.3);
-        fallers.push({ x: cat.x + lead, y: playTop - 50, w: 15, h: randi(28, 36), vy: 0, warn: 0.6 }); Snd.sfx('warn');
+        if (p.moon) { fallers.push({ x: cat.x + lead + 60, y: playTop - 50, w: 12, h: 12, vy: 0, warn: 0.7, met: true }); Snd.sfx('meteor'); }
+        else { fallers.push({ x: cat.x + lead, y: playTop - 50, w: 15, h: randi(28, 36), vy: 0, warn: 0.6 }); Snd.sfx('warn'); }
       }
     }
     // sub-steps for robust collisions
@@ -774,11 +836,14 @@
     items = items.filter(q => !q.taken && q.x > cut);
     presses = presses.filter(q => q.x1 > cut - 40);
     flips = flips.filter(f => f.st < 4 || f.xe > cut);
+    shadows = shadows.filter(q => !q.gone && q.x < camX + W + 40);
+    waves = waves.filter(q => !q.gone && q.x > cut);
     bears = bears.filter(b => b.x > cut - 20 && b.y < baseY + 200 && b.alive);
     fallers = fallers.filter(f => f.y < H + 60 && !f.gone);
     updParts(dt); animBg(dt);
     shake = Math.max(0, shake - dt);
     if (banner) { banner.t += dt; if (banner.t > banner.dur) banner = null; }
+    if (!banner && pendingBanner) { banner = pendingBanner; pendingBanner = null; }
     // cosmetic BTC wobble
     btcWob += dt;
   }
@@ -793,7 +858,7 @@
       if (f.st === 0 && cat.x >= f.xs - v * 1.0) { f.st = 1; flipWarn = { t: 1, dir: -1 }; Snd.sfx('flipWarn'); }
       if (f.st === 1 && cat.x >= f.xs) { f.st = 2; setGrav(-1); }
       if (f.st === 2 && cat.x >= f.xe - v * 1.0) { f.st = 3; flipWarn = { t: 1, dir: 1 }; Snd.sfx('flipWarn'); }
-      if (f.st === 3 && cat.x >= f.xe) { f.st = 4; setGrav(1); }
+      if (f.st === 3 && cat.x >= f.xe) { f.st = 4; setGrav(1); ach('flip'); }
     }
   }
   function updWhale(w, dt, v) {
@@ -821,7 +886,7 @@
     if (q.ph === 0 && cat.x > q.x0 - v * 1.35) { q.ph = 1; q.t = 0; Snd.sfx('pressWarn'); }
     if (q.ph === 1 && cat.x > q.x0 - v * 0.5) { q.ph = 2; q.t = 0; }
     if (q.ph === 2) { q.t += dt; const f = Math.min(1, q.t / 0.14); q.bot = playTop - 30 + (target - playTop + 30) * f; if (f >= 1) { q.ph = 3; q.t = 0; Snd.sfx('slam'); shake = Math.max(shake, 0.1); } }
-    else if (q.ph === 3) { q.t += dt; q.bot = target + Math.round(Math.sin(q.t * 18) * 1.5); if (cat.x > q.x1 + 24) { q.ph = 4; q.t = 0; } }
+    else if (q.ph === 3) { q.t += dt; q.bot = target + Math.round(Math.sin(q.t * 18) * 1.5); if (cat.x > q.x1 + 24) { q.ph = 4; q.t = 0; ach('squeeze'); } }
     else if (q.ph === 4) { q.t += dt; q.bot = target + (playTop - 30 - target) * Math.min(1, q.t / 0.5); }
     // floor plates squeeze up a little while the bar is down
     const lift = q.ph === 2 ? 4 * Math.min(1, q.t / 0.14) : q.ph === 3 ? 4 : q.ph === 4 ? 4 * (1 - Math.min(1, q.t / 0.5)) : 0;
@@ -829,6 +894,7 @@
   }
   function hurt(why) {
     if (pwT.dia > 0) return false;
+    if (RS) RS.stageHits++;
     if (shieldOn) {
       shieldOn = false; cat.inv = 1.3; shake = Math.max(shake, 0.2); Snd.sfx('shieldBreak');
       floats.push({ x: cat.x, y: cat.y - 56 * grav, t: 0, s: 'STOP-LOSS HIT!', c: '#8fd0ff' });
@@ -848,6 +914,7 @@
   }
   function pickItem(q) {
     q.taken = true; const P = PW[q.k]; bonus += 250; Snd.sfx('pw_' + q.k);
+    if (RS) { RS.pws[q.k] = 1; RS.stagePw++; if (Object.keys(RS.pws).length >= 4) ach('collector'); }
     if (q.k === 'shield') shieldOn = true; else pwT[q.k] = P.dur;
     banner = { big: P.name + '!', small: q.k === 'shield' ? 'BLOCKS ONE HIT' : q.k === 'mag' ? 'PULLS IN COINS' : q.k === 'slow' ? 'SLOW-MO 0.6X' : 'INVINCIBLE', t: 0, dur: 1.4 };
     floats.push({ x: q.x, y: q.y - 8, t: 0, s: '+250', c: P.col });
@@ -879,7 +946,7 @@
       if (grav < 0) { cat.y = FM2() - cat.y; cat.vy = -cat.vy; } inU = true;
       const prevY = cat.y;
       if (!cat.g) {
-        let g = GRAV * (ztype(zone) === 5 ? 0.88 : 1);
+        let g = GRAV * (ztype(zone) === 12 ? 0.78 : 1); // Moon Mode: low gravity
         if (cat.rising && pressing && cat.vy < 0) g *= 0.62;
         if (cat.vy >= 0) cat.rising = false;
         cat.holdT += dt;
@@ -900,7 +967,7 @@
           if (s !== null && s >= cat.y - up && s <= cat.y + down) { if (s0 === null || s < s0) { s0 = s; plg = pl; } }
         }
         if (s0 === null) { cat.g = false; cat.coy = 0.1; cat.vy = 0; }
-        else { cat.y = s0; if (plg.k === 'm') moonLand(plg); if (plg.k === 'w') plg.ridden = true; }
+        else { cat.y = s0; lastGY = grav > 0 ? s0 : lastGY; if (plg.k === 'm') moonLand(plg); if (plg.k === 'w') plg.ridden = true; }
       }
       inU = false; if (grav < 0) { cat.y = FM2() - cat.y; cat.vy = -cat.vy; }
     }
@@ -911,7 +978,7 @@
     for (const c of coins) {
       if (c.taken) continue;
       if (Math.abs(c.x - cat.x) < 17 && Math.abs(c.y - cmy) < 26) {
-        c.taken = true; bonus += 100; coinsN++; Snd.sfx('coin');
+        c.taken = true; bonus += 100; coinsN++; Snd.sfx('coin'); if (coinsN === 50) ach('hoard');
         const recent = floats.find(f => f.coin && f.t < 0.35);
         if (recent) { recent.n += 100; recent.s = '+' + recent.n; recent.t = 0; recent.x = cat.x; recent.y = cat.y - 36; }
         else floats.push({ x: cat.x + 4, y: cat.y - 36, t: 0, s: '+100', c: '#FFE500', coin: true, n: 100 });
@@ -920,7 +987,7 @@
     }
     for (const pw of powers) {
       if (pw.taken) continue;
-      if (Math.abs(pw.x - cat.x) < 21 && Math.abs(pw.y - cmy) < 28) { pw.taken = true; bonus += 400; floats.push({ x: pw.x, y: pw.y - 8, t: 0, s: '+400', c: '#FFE500' }); startBoost(); }
+      if (Math.abs(pw.x - cat.x) < 21 && Math.abs(pw.y - cmy) < 28) { pw.taken = true; bonus += 400; floats.push({ x: pw.x, y: pw.y - 8, t: 0, s: '+400', c: '#FFE500' }); startBoost(); if (RS && ++RS.boosts >= 5) ach('full'); }
     }
     for (const q of items) { if (!q.taken && Math.abs(q.x - cat.x) < 18 && Math.abs(q.y - cmy) < 26) pickItem(q); }
     const hb = grav > 0 ? { x: cat.x - 10, y: cat.y - 38, w: 20, h: 35 } : { x: cat.x - 10, y: cat.y + 3, w: 20, h: 35 };
@@ -954,10 +1021,12 @@
       if (f.warn > 0) { f.warn -= dt; continue; }
       const fy0 = f.y;
       f.vy = Math.min(f.vy + 700 * dt, 420); f.y += f.vy * dt;
+      if (f.met) f.x -= 70 * dt;
       for (const pl of plats) {
         if (pl.k !== 'c' || pl.red) continue;
         const s = surf(pl, f.x, 0);
-        if (s !== null && fy0 + f.h * 0.7 <= s && f.y + f.h * 0.7 >= s) {
+        if (f.met && s !== null && fy0 + f.h <= s + 2 && f.y + f.h >= s) { f.gone = true; shake = Math.max(shake, 0.08); Snd.sfx('impact'); for (let k = 0; k < 10; k++) parts.push({ x: f.x, y: s, vx: rand(-80, 80), vy: rand(-120, -20), l: 0.45, c: k % 2 ? '#ffb040' : '#c8b060', s: 1 }); break; }
+        if (!f.met && s !== null && fy0 + f.h * 0.7 <= s && f.y + f.h * 0.7 >= s) {
           const c = candle(f.x - f.w / 2, s - Math.round(f.h * 0.7), f.w, f.h, true); c.wt = 3; plats.push(c); f.gone = true;
           shake = Math.max(shake, 0.06); Snd.sfx('impact');
           for (let k = 0; k < 6; k++) parts.push({ x: f.x, y: s, vx: rand(-60, 60), vy: rand(-90, -20), l: 0.35, c: '#a8d8a2', s: 1 });
@@ -970,6 +1039,30 @@
         else if (!invuln && hurt('fall')) return;
       }
     }
+    // FRONT-RUNNER shadows: dark bot Decicats that replay your own heights ~0.6-1.0 s late and cut in front
+    gTime = cat.g ? gTime + dt : 0;
+    for (const q of shadows) {
+      if (q.gone) continue;
+      if (q.warn > 0) { q.warn -= dt; q.x += v * dt; }
+      else q.x += (v + q.rel) * dt;
+      q.f += dt; if (!q.lock) { const k = simFrame - q.d; q.y = k > 0 ? yHist[k & 127] : cat.y; if (q.warn <= 0 && q.x > cat.x - 80) q.lock = true; } else q.y += (lastGY - q.y) * Math.min(1, dt * 12); // locks onto YOUR current lane ~0.8 s before it passes: hop it (readable + fair)
+      if (!q.passed && q.x > cat.x + 20) { q.passed = true; bonus += 50; floats.push({ x: cat.x, y: cat.y - 56, t: 0, s: 'OUTRAN +50', c: '#7cfc9a' }); Snd.sfx('ghostPass'); if (RS) RS.dodged++; statAdd('dodged', 1); }
+      if (q.warn <= 0 && (cat.boost > 0 || pwT.dia > 0 ? hit({ x: q.x - 7, y: q.y - 27, w: 14, h: 27 }) : q.lock && cat.g && Math.abs(q.x - cat.x) < 11 && Math.abs(q.y - cat.y) < 14)) {
+        if (gTime < 0.15 && !(cat.boost > 0 || pwT.dia > 0)) { q.gone = true; smash(q.x, q.y - 16, '#3a1a5a'); bonus += 100; floats.push({ x: cat.x, y: cat.y - 56, t: 0, s: 'STOMP +100', c: '#7cfc9a' }); Snd.sfx('ghostPass'); continue; } // landing on it = stomp // trips you only while you're grounded on its lane: be airborne as it passes
+        if (cat.boost > 0 || pwT.dia > 0) { q.gone = true; smash(q.x, q.y - 16, '#3a1a5a'); bonus += 100; }
+        else if (!invuln && hurt('frontrun')) return;
+      }
+    }
+    // BEAR KING: lunging head (stomp it from above), slam shockwaves
+    if (boss && boss.ph === 'charge' && !cat.dead) {
+      const bx = camX + boss.sx, head = { x: bx - 22, y: boss.hy, w: 44, h: 30 }, body = { x: bx - 26, y: boss.hy + 30, w: 52, h: H };
+      if (cat.vy * grav > 40 && !cat.g && grav > 0 && cat.y - boss.hy < 16 && cat.y - boss.hy > -12 && Math.abs(cat.x - bx) < 27) bossStomp();
+      else if (hit(head) || hit(body)) { if (cat.boost > 0) bossStomp(); else if (!invuln && hurt('king')) return; }
+    }
+    for (const q of waves) {
+      q.x += (v - 150) * dt; q.t += dt;
+      if (hit({ x: q.x - 7, y: q.y - 11, w: 14, h: 11 })) { if (cat.boost > 0) q.gone = true; else if (!invuln && hurt('shockwave')) return; }
+    }
     // bears
     for (const b of bears) {
       if (!b.alive) continue;
@@ -979,7 +1072,7 @@
       if (hit(br)) {
         if (cat.boost > 0) { b.dead = true; b.vy = -200; Snd.sfx('smash'); bonus += 200; floats.push({ x: b.x, y: b.y - 20, t: 0, s: '+200', c: '#ffffff' }); }
         else if (grav > 0 && !cat.g && cat.vy > 40 && cat.y - (b.y - 16) < 13) {
-          b.dead = true; b.vy = -120; cat.vy = -280; cat.rising = true; cat.holdT = 0; cat.air = 1; bonus += 200; Snd.sfx('stomp');
+          b.dead = true; b.vy = -120; cat.vy = -280; cat.rising = true; cat.holdT = 0; cat.air = 1; bonus += 200; Snd.sfx('stomp'); if (RS) { RS.stomps++; statAdd('stomps', 1); }
           floats.push({ x: b.x, y: b.y - 22, t: 0, s: 'STOMP +200', c: '#ffffff' });
         }
         else if (!invuln && hurt('bear')) return;
@@ -990,11 +1083,11 @@
     if (grav > 0 ? cat.y - 44 > baseY + 4 : cat.y + 44 < playTop - 4) { if (DBG.god) die('fell'); else rescueFall('fell'); }
   }
   function land(s, pl) {
-    cat.y = s; cat.vy = 0; cat.g = true; cat.air = 1; cat.rising = false;
+    cat.y = s; cat.vy = 0; cat.g = true; cat.air = 1; cat.rising = false; if (grav > 0) lastGY = s;
     const ry = grav > 0 ? s : FM2() - s;
     for (let i = 0; i < 3; i++) parts.push({ x: cat.x + rand(-6, 6), y: ry, vx: rand(-30, 30), vy: rand(-30, -5) * grav, l: 0.25, c: '#cfc3ff', s: 1 });
     if (pl.k === 'm') moonLand(pl);
-    if (pl.k === 'w' && !pl.ridden) { pl.ridden = true; bonus += 150; floats.push({ x: cat.x, y: ry - 50, t: 0, s: 'WHALE RIDE +150', c: '#8fd0ff' }); Snd.sfx('splash'); }
+    if (pl.k === 'w' && !pl.ridden) { ach('whale'); pl.ridden = true; bonus += 150; floats.push({ x: cat.x, y: ry - 50, t: 0, s: 'WHALE RIDE +150', c: '#8fd0ff' }); Snd.sfx('splash'); }
     if (cat.buf > 0) { doJump(JUMP); Snd.sfx('jump'); if (!pressing) jumpRelease(); }
   }
   function moonLand(pl) { if (!pl.landed) { pl.landed = true; moonSeen = true; banner = { big: 'TRADE LOUD.', small: '', t: 0, dur: 2.2, yellow: true }; bonus += 500; floats.push({ x: cat.x, y: cat.y - 54, t: 0, s: '+500', c: '#FFE500' }); Snd.sfx('zone'); } }
@@ -1029,6 +1122,154 @@
     floats = floats.filter(f => f.t < 0.9);
   }
 
+  // ---------- v5: Bear King (stage 9 boss) ----------
+  const BOSS_PAT = ['throw', 'lunge', 'wave', 'lunge', 'throw', 'wave', 'lunge'];
+  function bossHome() { return { sx: W - 48, hy: baseY - Math.min(150, Math.round(playH * 0.62)) }; }
+  function bossStart() { const h = bossHome(); boss = { ph: 'enter', t: 0, hp: 3, sx: W + 70, hy: h.hy, ly: h.hy, flash: 0, seq: 0, gap: 1, n: 0, done: false, roared: false }; }
+  function updBoss(dt, p) {
+    const B = boss, h = bossHome(), ez = (a, b, k) => a + (b - a) * Math.min(1, k * dt);
+    B.t += dt; B.flash = Math.max(0, B.flash - dt);
+    if (B.ph === 'enter') {
+      B.sx = ez(B.sx, h.sx, 3.2); B.hy = ez(B.hy, h.hy, 5);
+      if (B.t > 1.3) { B.sx = h.sx; B.ph = 'idle'; B.t = 0; B.gap = 0.8; if (!B.roared) { B.roared = true; Snd.sfx('roar'); shake = Math.max(shake, 0.25); banner = { big: 'THE BEAR KING!', small: 'STOMP HIS HEAD 3 TIMES', t: 0, dur: 2.4 }; } }
+    } else if (B.ph === 'idle') {
+      B.sx = h.sx; B.hy = ez(B.hy, h.hy, 4);
+      if (B.t > B.gap) { B.ph = BOSS_PAT[B.seq++ % BOSS_PAT.length]; B.t = 0; B.n = 0; if (B.ph === 'lunge') { B.ly = clamp(lastGY - 30, playTop + 30, baseY - 44); Snd.sfx('roar'); } }
+    } else if (B.ph === 'throw') { // raise the red-candle sceptre (0.7 s), then hurl 3 red candles that land ahead of you
+      if (B.t >= 0.7 + B.n * 0.45 && B.n < 3) { B.n++; fallers.push({ x: cat.x + p.speed * rand(1.45, 2.05), y: playTop - 50, w: 15, h: randi(28, 36), vy: 0, warn: 0.55, king: true }); Snd.sfx('throwC'); }
+      if (B.t > 2.4) { B.ph = 'idle'; B.t = 0; B.gap = rand(0.8, 1.3); }
+    } else if (B.ph === 'wave') { // hop (0.6 s), slam: a shockwave rolls toward you at your level - jump it
+      B.hy = h.hy - Math.round(Math.sin(Math.min(1, B.t / 0.6) * Math.PI) * 16);
+      const need = B.hp <= 1 ? 2 : 1;
+      if (B.t >= 0.6 + B.n * 0.75 && B.n < need) { B.n++; B.hy = h.hy; waves.push({ x: camX + B.sx - 30, y: lastGY, t: 0 }); Snd.sfx('shock'); shake = Math.max(shake, 0.22); }
+      if (B.t > 0.6 + need * 0.75 + 0.3) { B.ph = 'idle'; B.t = 0; B.gap = rand(0.8, 1.3); }
+    } else if (B.ph === 'lunge') { // lower the head to your level (0.85 s telegraph) ...
+      B.sx = h.sx; B.hy = ez(B.hy, B.ly, 6);
+      if (B.t > 0.85) { B.ph = 'charge'; B.t = 0; B.hy = B.ly; }
+    } else if (B.ph === 'charge') { // ... and charge: land on his head to stomp, touching him from the side hurts
+      B.sx -= (150 + 15 * (3 - B.hp)) * dt;
+      if (B.sx < -46) { B.ph = 'leap'; B.t = 0; }
+    } else if (B.ph === 'leap') {
+      if (B.t > 0.9) { B.ph = 'enter'; B.t = 0; B.sx = W + 70; B.hy = h.hy; }
+    } else if (B.ph === 'recoil') {
+      B.sx += 300 * dt; B.hy = ez(B.hy, h.hy, 4);
+      if (B.sx >= h.sx) { B.sx = h.sx; B.ph = 'idle'; B.t = 0; B.gap = 1.2; }
+    } else if (B.ph === 'flee' || B.ph === 'retreat') {
+      B.sx += 170 * dt; B.hy += 30 * dt;
+      if (B.sx > W + 90) boss = null;
+    }
+  }
+  function bossStomp() {
+    const B = boss; if (!B || B.ph !== 'charge') return;
+    B.hp--; B.flash = 0.5; shake = Math.max(shake, 0.2);
+    cat.vy = -430; cat.g = false; cat.rising = false; cat.air = 1; cat.inv = Math.max(cat.inv, 0.5);
+    bonus += 500; floats.push({ x: cat.x, y: cat.y - 56, t: 0, s: 'STOMP! +500', c: '#FFE500' }); Snd.sfx('kingHit');
+    for (let i = 0; i < 12; i++) parts.push({ x: cat.x, y: B.hy, vx: rand(-110, 110), vy: rand(-140, 0), l: 0.5, c: i % 2 ? '#FFE500' : '#ffffff', s: 2 });
+    if (B.hp <= 0) {
+      B.ph = 'flee'; B.t = 0; B.done = true; bonus += 5000; Snd.sfx('kingDown'); ach('king');
+      banner = { big: 'KING DEFEATED!', small: '+5000 BONUS', t: 0, dur: 2.6, yellow: true };
+      floats.push({ x: cat.x, y: cat.y - 70, t: 0, s: '+5000', c: '#FFE500' });
+    } else { B.ph = 'recoil'; B.t = 0; }
+  }
+  let pendingBanner = null;
+  function bossTimeout() { // time's up: the King retreats (smaller bonus), the run goes on (no soft-lock)
+    if (!boss || boss.done) return;
+    boss.ph = 'retreat'; boss.t = 0; boss.done = true; bonus += 1000; waves = [];
+    pendingBanner = { big: 'THE KING RETREATS', small: '+1000 BONUS', t: 0, dur: 2.2 };
+    floats.push({ x: cat.x, y: cat.y - 60, t: 0, s: '+1000', c: '#FFE500' });
+  }
+  function rocketX() { return cat.x + Math.max(0, ZONE_T - zoneT) * zp(zone).speed + 46; }
+
+  // ---------- v5: rocket ending -> YOU MADE IT -> MOON MODE ----------
+  // The sim is frozen for the whole cutscene + results card (no input is read, nothing random is drawn from the
+  // seeded RNG), so a replay re-sim simply skips straight to startMoonMode() and stays exact.
+  const END_T = 12.6, ENDING_BONUS = 10000;
+  let csCam = null, csZP = 0, csParts = [], csFx = 0;
+  function reachEnding() {
+    if (pressing) applyInput(0); // close the held press in the log (keeps the down/up event stream alternating)
+    bonus += ENDING_BONUS; reachedMoon = true;
+    endInfo = { runMs: Math.round(runT * 1000), score: score(), bonus: ENDING_BONUS, rsx: clamp(Math.round(rocketX() - camX), cat.sx + 34, W - 30), gy: Math.round(cat.y), skipped: false };
+    pressing = false; inQ.length = 0; cat.boost = 0; lev = 1; boss = null; waves = []; shadows = [];
+    state = 'ending'; stateT = 0; csParts = []; csFx = 0; csCam = null;
+    Snd.amb('rocket', 0); setRain(0); Snd.music('z5', { q: 'now', restart: true }); ach('moon');
+  }
+  function applyReplayResizes() {
+    const R = replaying; if (!R) return;
+    while (R.rsi < R.rs.length && R.rs[R.rsi][0] <= simFrame) { const r = R.rs[R.rsi++]; applyLogical(r[1], r[2]); }
+  }
+  function startMoonMode() {
+    applyReplayResizes(); cat.sx = Math.round(W * 0.27); csCam = null;
+    zone = STAGES + 1; prevZone = zone; zoneT = 0; zoneFade = 1; if (!replaying) BG.reset(); // you're already on the moon: no launch-pad scenery fading over it powerTimer = rand(0.25, 0.6) * ZONE_T; pwSpawned = {}; clustersSinceSpecial = 0; launchPad = false;
+    plats = []; coins = []; powers = []; bears = []; fallers = []; items = []; presses = []; flips = []; shadows = []; waves = []; boss = null; flipWarn = null;
+    grav = 1; pressing = false; inQ.length = 0; gust = 0; gustT = 0; fallTimer = 2.5; shadowTimer = 3;
+    lastTop = clamp(baseY - 64, topMin(), topMax()); let x = camX - 20;
+    while (x < camX + cat.sx + 160) { const w = randi(17, 21); plats.push(candle(x, lastTop, w, randi(18, 34), false)); x += w + randi(3, 4); }
+    nextX = x; cat.x = camX + cat.sx; cat.y = lastTop; lastGY = lastTop; cat.vy = 0; cat.g = true; cat.air = 1; cat.boost = 0; cat.inv = 1.5; cat.coy = 0; cat.buf = 0; cat.rising = false; lev = 1;
+    nextFlipX = camX + 520;
+    while (nextX < camX + W + 100) genCluster();
+    banner = { big: 'MOON MODE', small: 'LOW GRAVITY - ENDLESS', t: 0, dur: 2.6, yellow: true };
+    state = 'play'; stateT = 0;
+    playZoneMusic('now');
+  }
+  function updEnding(dt) {
+    animBg(dt); updParts(dt);
+    for (const q of csParts) { q.l -= dt; q.vy += (q.g || 0) * dt; q.x += q.vx * dt; q.y += q.vy * dt; }
+    csParts = csParts.filter(q => q.l > 0); if (csParts.length > 600) csParts.splice(0, csParts.length - 600);
+    shake = Math.max(0, shake - dt);
+    if (state === 'ending') {
+      const t = stateT, cue = (at, fn) => { if (csFx < at && t >= at) fn(); };
+      cue(1.5, () => Snd.sfx('beep')); cue(2.5, () => Snd.sfx('beep')); cue(3.5, () => Snd.sfx('beep'));
+      cue(4.5, () => { Snd.sfx('go'); Snd.sfx('liftoff'); Snd.amb('rocket', 0.1); });
+      cue(9.0, () => Snd.amb('rocket', 0.04)); cue(10.7, () => { Snd.amb('rocket', 0); Snd.sfx('touchdown'); });
+      cue(11.0, () => Snd.sfx('zone')); [11.2, 11.6, 11.9, 12.2].forEach(a => cue(a, () => Snd.sfx('firework')));
+      csFx = t;
+      if (t >= END_T) toMoonWin();
+    } else if (stateT >= 8) startMoonMode();
+  }
+  function toMoonWin() { state = 'moonwin'; stateT = 0; csCam = null; Snd.amb('rocket', 0); Snd.music('results', { q: 'now', restart: true }); }
+
+  // ---------- v5: trophies + skins (localStorage only, cosmetic, never touch the sim) ----------
+  const ACH = [
+    ['hop', 'FIRST HOP', 'JUMP FOR THE FIRST TIME'],
+    ['stomp10', 'BEAR STOMPER', 'STOMP 10 BEARS (ALL RUNS)'],
+    ['storm', 'STORM CHASER', 'SURVIVE THE FUNDING STORM'],
+    ['whale', 'WHALE RIDER', 'RIDE A WHALE'],
+    ['squeeze', 'SQUEEZE PLAY', 'THREAD A SHORT SQUEEZE'],
+    ['flip', 'UPSIDE DOWN', 'SURVIVE A GRAVITY FLIP'],
+    ['bots', 'OUTRUN THE BOTS', 'OUTRUN 10 FRONT-RUNNERS (ALL RUNS)'],
+    ['king', 'KINGSLAYER', 'BEAT THE BEAR KING'],
+    ['moon', 'TO THE MOON', 'REACH THE MOON'],
+    ['full', 'FULL SEND', 'GRAB 40x FIVE TIMES IN ONE RUN'],
+    ['nohit', 'CLEAN STAGE', 'NO HITS, NO POWER-UPS: STAGE 4+'],
+    ['hoard', 'COIN HOARDER', '50 COINS IN ONE RUN'],
+    ['collector', 'FULL KIT', 'ALL 4 POWER-UPS IN ONE RUN'],
+    ['moonwalk', 'MOON WALKER', 'SURVIVE 60 S OF MOON MODE']
+  ];
+  const SKINS = [['classic', 'CLASSIC', null], ['night', 'NIGHT', 'storm'], ['hoodie', 'HOODIE', 'whale'], ['gold', 'GOLD', 'full'], ['laser', 'LASER EYES', 'king'], ['astro', 'ASTRONAUT', 'moon']];
+  const ACHKEY = 'decicat_ach_v1', STATKEY = 'decicat_stats_v1', SKINKEY = 'decicat_skin';
+  const loadJ = (k) => { try { const o = JSON.parse(LS.get(k) || '{}'); return o && typeof o === 'object' ? o : {}; } catch (e) { return {}; } };
+  let achSet = loadJ(ACHKEY), stats = loadJ(STATKEY), toasts = [];
+  const quietAch = () => MUTE || !!replaying;
+  function ach(id) {
+    if (quietAch() || achSet[id] || !ACH.some(a => a[0] === id)) return;
+    achSet[id] = Date.now(); LS.set(ACHKEY, JSON.stringify(achSet));
+    const sk = SKINS.find(s => s[2] === id);
+    if (toasts.length < 8) toasts.push({ id, t: 0, skin: sk ? sk[1] : null });
+    Snd.sfx('trophy');
+  }
+  function statAdd(k, n) {
+    if (quietAch()) return;
+    stats[k] = (stats[k] | 0) + n; LS.set(STATKEY, JSON.stringify(stats));
+    if ((stats.stomps | 0) >= 10) ach('stomp10');
+    if ((stats.dodged | 0) >= 10) ach('bots');
+  }
+  const skinUnlocked = id => { const s = SKINS.find(q => q[0] === id); return !!s && (!s[2] || !!achSet[s[2]]); };
+  let skinId = skinUnlocked(LS.get(SKINKEY)) ? LS.get(SKINKEY) : 'classic';
+  function cycleSkin(d) {
+    const un = SKINS.filter(s => skinUnlocked(s[0])); let i = un.findIndex(s => s[0] === skinId);
+    i = (i + d + un.length) % un.length; skinId = un[i][0]; LS.set(SKINKEY, skinId);
+  }
+
   // ---------- simple autoplay bot (debug/video only: ?bot) ----------
   let botHold = 0;
   function bot(dt) {
@@ -1050,12 +1291,15 @@
       }
       for (const b of bears) if (!b.dead && b.x - cat.x > 0 && b.x - cat.x < look + 34 + (b.charged ? 30 : 0) && Math.abs(b.y - cat.y) < 20) return true;
       for (const f of fallers) if (Math.abs(f.x - (cat.x + 20)) < 16 && f.warn <= 0 && f.y < cat.y && f.y > cat.y - 120) return true;
+      for (const q of waves) if (q.x - cat.x > 0 && q.x - cat.x < 30 && Math.abs(q.y - cat.y) < 14) return true;
+      for (const q of shadows) if (q.lock && cat.x - q.x > 4 && cat.x - q.x < 26 && Math.abs(q.y - cat.y) < 16) return true;
+      if (boss && boss.ph === 'charge') { const bx = camX + boss.sx; if (bx - cat.x > 0 && bx - cat.x < 78) return true; }
       return false;
     };
     const pw = powers.find(q => !q.taken && q.x - cat.x > 0 && q.x - cat.x < look + 12);
     if (cat.g) {
       if (!supAt(cat.x + 13) || danger() || pw) { press(); botHold = 0.22; }
-    } else if (cat.vy * grav > 60 && cat.air > 0) {
+        } else if (cat.vy * grav > 60 && cat.air > 0) {
       let below = false;
       for (const pl of plats) { for (let k = 0; k < 6; k++) { const s = surfG(pl, cat.x + k * 10, 10); if (s !== null && s >= uy - 2 && s < baseY) below = true; } }
       if (!below) { press(); botHold = 0.2; }
@@ -1073,7 +1317,8 @@
   function animBg(dt) { bgT += dt; }
   const BG = D.makeBG({
     ctx, get W() { return W; }, get H() { return H; }, get baseY() { return baseY; }, get playTop() { return playTop; }, get playH() { return playH; },
-    get camX() { return camX; }, get bgT() { return bgT; }, get gust() { return gust; }, get zoneP() { return Math.min(1, zoneT / ZONE_T); }, get stars() { return stars; },
+    get camX() { return csCam !== null ? csCam : camX; }, get bgT() { return bgT; }, get gust() { return gust; }, get zoneP() { return csCam !== null ? csZP : Math.min(1, zoneT / ZONE_T); }, get stars() { return stars; },
+    get zoneLeft() { return state === 'ending' ? 0 : ZONE_T - zoneT; },
     zone: zt => ZONES[zt], ztype, zloop, text: (s, x, y, c) => text(s, x, y, c), textW: s => textW(s)
   });
   function drawBackground() {
@@ -1106,6 +1351,12 @@
   function drawCandle(c, sx) {
     const x = Math.round(c.x - sx), y = Math.round(c.y);
     if (x > W + 4 || x + c.w < -4) return;
+    if (c.pad) { // LAUNCH PAD steel deck with hazard stripes
+      ctx.fillStyle = '#1a1428'; ctx.fillRect(x, y, c.w, c.h); ctx.fillStyle = '#5a5070'; ctx.fillRect(x, y + 1, c.w, c.h - 1); ctx.fillStyle = '#8a80a0'; ctx.fillRect(x, y + 1, c.w, 1);
+      for (let i = 0; i < c.w; i++) { ctx.fillStyle = ((x + i) >> 2) % 2 ? '#e0b020' : '#1a1206'; ctx.fillRect(x + i, y + 2, 1, 2); }
+      ctx.fillStyle = '#3a3450'; for (let yy = y + 8; yy < y + c.h; yy += 6) ctx.fillRect(x + 2, yy, c.w - 4, 1);
+      return;
+    }
     const red = c.red;
     const fill = red ? '#D9584E' : '#7FB77E', hi = red ? '#ee8070' : '#a8d8a2', lo = red ? '#9b3a33' : '#4f8a52', out = red ? '#5a1f1c' : '#2c5a33';
     const mx = x + Math.floor(c.w / 2);
@@ -1187,8 +1438,10 @@
     ctx.fillStyle = glow ? P.col : '#ffffff'; ctx.fillRect(x + 1, y, 13, 1); ctx.fillRect(x + 1, y + 14, 13, 1); ctx.fillRect(x, y + 1, 1, 13); ctx.fillRect(x + 14, y + 1, 1, 13);
     ctx.drawImage(S.pw[q.k], x + 3, y + 3);
   }
-  function drawWorld() {
+  function drawWorld(noCat) {
     const sx = camX, z6 = waterOn();
+    if (boss && boss.ph !== 'charge') drawBoss(sx);
+    drawPadRocket(sx);
     for (const pl of plats) if (pl.k === 'w') drawWhale(pl, sx);
     for (const pl of plats) {
       if (pl.k === 'm') { if (pl.cx - sx + pl.r > -4 && pl.cx - sx - pl.r < W + 4) drawMoon(pl.cx - sx, pl.cy, pl.r, false); }
@@ -1222,10 +1475,13 @@
       const x = f.x - sx;
       if (f.warn > 0) {
         if (Math.floor(f.warn * 10) % 2 === 0) { const wy = Math.max(playTop + 26, 26); ctx.fillStyle = '#D9584E'; ctx.fillRect(Math.round(x) - 4, wy, 9, 11); text('!', Math.round(x) - 2, wy + 2, '#ffffff'); }
-      } else drawCandle({ x: f.x - f.w / 2, y: f.y, w: f.w, h: f.h, red: true, wt: 4, wb: 5 }, sx);
+      } else if (f.met) drawMeteor(f, sx);
+      else drawCandle({ x: f.x - f.w / 2, y: f.y, w: f.w, h: f.h, red: true, wt: 4, wb: 5 }, sx);
     }
+    if (boss && boss.ph === 'charge') drawBoss(sx);
+    drawWaves(sx); drawShadows(sx);
     // cat
-    drawCat(cat.x - sx, cat.y);
+    if (!noCat) drawCat(cat.x - sx, cat.y);
     // particles
     for (const q of parts) { ctx.globalAlpha = clamp(q.l * 3, 0, 1); ctx.fillStyle = q.c; ctx.fillRect(Math.round(q.x - sx), Math.round(q.y), q.s, q.s); }
     ctx.globalAlpha = 1;
@@ -1243,10 +1499,10 @@
       for (let a = 0; a < 48; a++) { const t = a / 48 * Math.PI * 2; ctx.fillRect(Math.round(cx + Math.cos(t) * r), Math.round(cy + Math.sin(t) * (r + 2)), 1, 1); }
     }
     if (y < 20 && !cat.dead && state === 'play') { ctx.fillStyle = '#ffcc00'; const ax = Math.round(x); for (let i = 0; i < 4; i++) ctx.fillRect(ax - i, 2 + i, 1 + 2 * i, 1); } // off-top marker
-    let fr;
-    const runF = [S.cat.run1, S.cat.run2, S.cat.run3, S.cat.run4];
-    if (cat.dead) fr = S.cat.dead;
-    else if (cat.boost > 0 || !cat.g) fr = S.cat.jump;
+    let fr; const SK = skinFrames(skinId); // skins are render-only
+    const runF = [SK.run1, SK.run2, SK.run3, SK.run4];
+    if (cat.dead) fr = SK.dead;
+    else if (cat.boost > 0 || !cat.g) fr = SK.jump;
     else fr = runF[Math.floor(cat.anim) % 4];
     if (cat.inv > 0 && cat.boost <= 0 && Math.floor(cat.inv * 12) % 2 === 0) return;
     if (cat.dead) { ctx.save(); ctx.translate(Math.round(x), Math.round(y - 23)); ctx.rotate(Math.round(cat.rot * 4) / 4 * Math.PI / 2); ctx.drawImage(fr, -19, -23); ctx.restore(); return; }
@@ -1262,8 +1518,292 @@
     }
     if (cat.boost > 0 && Math.floor(bgT * 10) % 4 === 0) { ctx.globalAlpha = 0.5; drawSpr(S.catWhite, X - 19, Y - 46); ctx.globalAlpha = 1; }
     drawSpr(fr, X - 19, Y - 46);
+    if (skinId === 'astro') ctx.drawImage(getHelmet(), X - 23, Y - 55);
+    if (skinId === 'laser' && state === 'play' && Math.floor(bgT * 1.5) % 3 === 0) { ctx.fillStyle = 'rgba(255,40,50,0.55)'; ctx.fillRect(X + 12, Y - 31, W - X, 1); ctx.fillRect(X + 12, Y - 30, W - X, 1); ctx.fillStyle = '#ffd0d0'; ctx.fillRect(X + 12, Y - 31, 3, 2); }
+    if (skinId === 'gold' && Math.floor(bgT * 5) % 5 === 0) { ctx.fillStyle = '#ffffff'; const k = Math.floor(bgT * 5) % 3; ctx.fillRect(X - 10 + k * 9, Y - 40 + k * 7, 1, 3); ctx.fillRect(X - 11 + k * 9, Y - 39 + k * 7, 3, 1); }
     if (pwT.dia > 0 && Math.floor(bgT * 12) % 3 === 0) { ctx.globalAlpha = 0.55; drawSpr(S.catWhite, X - 19, Y - 46); ctx.globalAlpha = 1; } // DIAMOND PAWS shimmer
   }
+
+  // ---------- v5 sprites: skins (minimal edits of the traced sprite), front-runner shadows, Bear King, rocket ----------
+  const CATF = D.SPR.cat.frames, FR_KEYS = Object.keys(CATF);
+  const inShades = (x, y) => y >= 11 && y <= 17 && x >= 13 && x <= 31; // lens area of the sunglasses (glints = 'L')
+  const mapRows = (rows, fn) => rows.map((r, y) => r.split('').map((ch, x) => ch === '.' ? '.' : fn(ch, x, y)).join(''));
+  const grad = (a, b) => y => { const t = Math.max(0, Math.min(1, (y - 2) / 43)), c = (i) => Math.round(a[i] + (b[i] - a[i]) * t); return 'rgb(' + c(0) + ',' + c(1) + ',' + c(2) + ')'; };
+  const SKIN_DEF = {
+    night: { pal: { K: '#05040a', G: '#1c1a3a', g: '#3e3a78', L: '#c8c0ff', D: '#2e2470', Y: grad([92, 76, 182], [58, 46, 136]) } },
+    gold: { pal: { K: '#2a1800', G: '#6a4600', g: '#d8a020', L: '#fffbe0', D: '#c08000', Y: grad([255, 222, 80], [240, 176, 30]) } },
+    hoodie: { map: (ch, x, y) => { const body = (y <= 9 && ch !== 'K' && ch !== 'G' && ch !== 'g') || (y >= 20 && y <= 40 && x >= 5); if (!body) return ch; if ((x === 16 || x === 23) && y >= 21 && y <= 25 && ch === 'Y') return 's'; return ch === 'Y' ? 'H' : ch === 'L' ? 'h' : ch === 'D' ? 'j' : ch; },
+      pal: { H: '#3c3656', h: '#5c5684', j: '#262038', s: '#FFE500' } },
+    laser: { map: (ch, x, y) => inShades(x, y) && ch === 'L' ? 'R' : ch, pal: { R: '#ff2030' } },
+    astro: { map: (ch, x, y) => { if (y < 20 || x < 5 || y > 44) return ch; if (y >= 26 && y <= 27 && x >= 11 && x <= 13) return 'P'; return ch === 'Y' ? 'W' : ch === 'L' ? 'w' : ch === 'D' ? 's' : ch; },
+      pal: { W: '#e4e8f2', w: '#ffffff', s: '#98a2b8', P: '#FFE500' } }
+  };
+  const skinCache = {};
+  function skinFrames(id) {
+    if (id === 'classic' || !SKIN_DEF[id]) return S.cat;
+    if (skinCache[id]) return skinCache[id];
+    const d = SKIN_DEF[id], pal = Object.assign({}, D.SPR.cat.pal, d.pal), o = {};
+    for (const f of FR_KEYS) o[f] = makeSprite(d.map ? mapRows(CATF[f], d.map) : CATF[f], pal);
+    return (skinCache[id] = o);
+  }
+  let helmet = null;
+  function getHelmet() { // astronaut glass bubble (cosmetic overlay)
+    if (helmet) return helmet;
+    const c = document.createElement('canvas'); c.width = 46; c.height = 40; const g = c.getContext('2d');
+    for (let a = 0; a < 160; a++) { const t = a / 160 * Math.PI * 2, x = Math.round(23 + Math.cos(t) * 22), y = Math.round(21 + Math.sin(t) * 19); g.fillStyle = (t > 3.6 && t < 4.6) ? '#ffffff' : 'rgba(170,220,255,0.85)'; g.fillRect(x, y, 1, 1); }
+    g.fillStyle = 'rgba(170,220,255,0.10)'; for (let y = 4; y < 38; y++) { const hw = Math.floor(Math.sqrt(Math.max(0, 1 - Math.pow((y - 21) / 19, 2))) * 21); g.fillRect(23 - hw, y, hw * 2, 1); }
+    g.fillStyle = '#ffffff'; g.fillRect(9, 10, 2, 1); g.fillRect(8, 11, 1, 3);
+    return (helmet = c);
+  }
+  const shadowSpr = {};
+  function getShadow(f) { // dark bot-Decicat silhouette with glowing red eyes, plus a purple aura copy
+    if (shadowSpr[f]) return shadowSpr[f];
+    const rows = mapRows(CATF[f], (ch, x, y) => inShades(x, y) && ch === 'L' ? 'R' : 'k');
+    return (shadowSpr[f] = { body: makeSprite(rows, { k: '#0a0612', R: '#ff2a4a' }), aura: makeSprite(rows, { k: '#5a2a9a', R: '#ff2a4a' }) });
+  }
+  let kingSpr = null;
+  function getKing() { // 60x64 pixel Bear King, facing left; head top at y=12 (crown above)
+    if (kingSpr) return kingSpr;
+    const mk = (flash) => {
+      const c = document.createElement('canvas'); c.width = 60; c.height = 64; const g = c.getContext('2d');
+      const F = (col, x, y, w, h) => { g.fillStyle = flash ? '#ffffff' : col; g.fillRect(x, y, w, h); };
+      const blob = (col, cx, cy, rx, ry) => { for (let y = -ry; y <= ry; y++) { const hw = Math.round(rx * Math.sqrt(Math.max(0, 1 - (y * y) / (ry * ry + 0.5)))); F(col, cx - hw, cy + y, hw * 2 + 1, 1); } };
+      // cape + body
+      blob('#2a0a24', 32, 50, 27, 15); blob('#5a1a6a', 32, 50, 25, 14); F('#f0ecf0', 8, 40, 48, 3); for (let x = 10; x < 56; x += 5) F('#111111', x, 41, 1, 1);
+      blob('#2a160a', 30, 50, 19, 14); blob('#6b3e22', 30, 50, 18, 13); blob('#a0683c', 28, 54, 10, 9);
+      // head
+      blob('#2a160a', 12, 15, 6, 6); blob('#2a160a', 46, 15, 6, 6); blob('#6b3e22', 12, 15, 5, 5); blob('#6b3e22', 46, 15, 5, 5); blob('#c0806a', 12, 15, 2, 2); blob('#c0806a', 46, 15, 2, 2);
+      blob('#2a160a', 29, 28, 20, 16); blob('#6b3e22', 29, 28, 19, 15); F('#86502c', 14, 16, 30, 2);
+      blob('#2a160a', 22, 35, 9, 7); blob('#c8955e', 22, 35, 8, 6); F('#111111', 15, 31, 6, 4); F('#555555', 16, 31, 2, 1); F('#2a160a', 16, 38, 12, 1); F('#2a160a', 22, 35, 1, 3);
+      F('#ffffff', 20, 39, 2, 2); F('#ffffff', 25, 39, 2, 2); // fangs
+      // angry brows + glowing eyes
+      F('#1a0c04', 14, 21, 9, 2); F('#1a0c04', 21, 23, 2, 1); F('#1a0c04', 32, 21, 9, 2); F('#1a0c04', 32, 23, 2, 1);
+      F('#ff3030', 16, 24, 4, 3); F('#ffd0a0', 17, 24, 1, 1); F('#ff3030', 33, 24, 4, 3); F('#ffd0a0', 34, 24, 1, 1);
+      // crown with red gems
+      F('#5a3a00', 14, 4, 32, 10); F('#ffd21f', 15, 5, 30, 8); F('#fff3a0', 15, 5, 30, 1);
+      for (const x of [15, 26, 37]) { F('#5a3a00', x, 0, 8, 5); F('#ffd21f', x + 1, 1, 6, 4); F('#5a3a00', x + 3, -1, 2, 2); }
+      F('#d9584e', 19, 8, 3, 3); F('#5ab4ff', 29, 8, 3, 3); F('#d9584e', 39, 8, 3, 3);
+      // paw (holds the sceptre)
+      blob('#2a160a', 8, 46, 5, 5); blob('#6b3e22', 8, 46, 4, 4);
+      return c;
+    };
+    return (kingSpr = { n: mk(false), f: mk(true) });
+  }
+  let rocketSpr = null;
+  function getRocket() { // 32x62 Decibel rocket (upright) + a 90-degree copy for the flight shot
+    if (rocketSpr) return rocketSpr;
+    const c = document.createElement('canvas'); c.width = 32; c.height = 62; const g = c.getContext('2d');
+    const F = (col, x, y, w, h) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+    for (let y = 0; y < 14; y++) { const hw = Math.round(1 + y * 0.72); F('#2a2a3a', 16 - hw - 1, y, hw * 2 + 2, 1); F(y < 3 ? '#fff3a0' : '#FFE500', 16 - hw, y, hw * 2, 1); F('#c8a800', 16 + hw - 2, y, 2, 1); }
+    F('#2a2a3a', 5, 14, 22, 36); F('#ecedf4', 6, 14, 20, 36); F('#b8bacb', 22, 14, 4, 36); F('#ffffff', 7, 14, 1, 36);
+    F('#2a2a3a', 11, 19, 10, 9); F('#5ab4ff', 12, 20, 8, 7); F('#bfe4ff', 13, 21, 3, 2); // window
+    F('#FFE500', 6, 31, 20, 7); F('#c8a800', 22, 31, 4, 7); F('#111111', 13, 32, 1, 5); F('#111111', 15, 33, 1, 3); F('#111111', 17, 32, 1, 5); F('#111111', 19, 33, 1, 3); // stripe + speaker bars
+    F('#D9584E', 6, 44, 20, 2);
+    for (let i = 0; i < 12; i++) { F('#5a1f1c', 4 - Math.floor(i / 3), 38 + i, 2 + Math.floor(i / 3), 1); F('#D9584E', 5 - Math.floor(i / 3), 38 + i, 1 + Math.floor(i / 3), 1); F('#5a1f1c', 26, 38 + i, 2 + Math.floor(i / 3), 1); F('#D9584E', 26, 38 + i, 1 + Math.floor(i / 3), 1); }
+    F('#3a3a48', 9, 50, 14, 6); F('#5a5a68', 10, 50, 12, 5); F('#2a2a34', 11, 56, 10, 4); F('#7a7a88', 11, 50, 2, 5);
+    const r = document.createElement('canvas'); r.width = 62; r.height = 32; const rg = r.getContext('2d'); rg.translate(62, 0); rg.rotate(Math.PI / 2); rg.drawImage(c, 0, 0);
+    return (rocketSpr = { up: c, side: r });
+  }
+  function drawFlame(x, y, w, len, k) { // pixel rocket flame pointing down from (x,y)
+    const f = Math.floor(bgT * 20 + k) % 2;
+    ctx.fillStyle = '#D9584E'; ctx.fillRect(x - (w >> 1), y, w, len + f * 3);
+    ctx.fillStyle = '#ff8a2a'; ctx.fillRect(x - (w >> 1) + 1, y, w - 2, Math.round(len * 0.75) + f * 2);
+    ctx.fillStyle = '#FFE500'; ctx.fillRect(x - (w >> 1) + 2, y, Math.max(1, w - 4), Math.round(len * 0.45) + f);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 1, y, 2, 3);
+  }
+  function drawGantry(x, gy, h) {
+    ctx.fillStyle = '#2e2440'; ctx.fillRect(x, gy - h, 2, h); ctx.fillRect(x + 10, gy - h, 2, h);
+    for (let y = gy - h; y < gy; y += 8) { ctx.fillRect(x, y, 12, 1); for (let i = 0; i < 10; i++) ctx.fillRect(x + 1 + i, y + Math.round(i * 0.8), 1, 1); }
+    ctx.fillStyle = '#463a5c'; ctx.fillRect(x - 3, gy - h - 3, 18, 3);
+    ctx.fillStyle = Math.floor(bgT * 2) % 2 ? '#ff4a4a' : '#5a1a1a'; ctx.fillRect(x + 5, gy - h - 6, 2, 2);
+  }
+  function drawPadRocket(sx) { // stage 10: the rocket waits on the pad
+    if (!launchPad || ztype(zone) !== 11 || state !== 'play') return;
+    const R = getRocket(), rx = Math.round(rocketX() - sx), gy = Math.round(lastTop);
+    if (rx < -60 || rx > W + 40) return;
+    drawGantry(rx - 30, gy, 70); ctx.fillStyle = '#463a5c'; ctx.fillRect(rx - 18, gy - 40, 10, 2); ctx.fillRect(rx - 18, gy - 26, 10, 2);
+    ctx.drawImage(R.up, rx - 16, gy - 62);
+    if (Math.floor(bgT * 3) % 2) text('BOARD!', rx, gy - 76, '#FFE500', { align: 'center', shadow: '#2a1d4a' });
+  }
+  function drawBoss(sx) {
+    const B = boss; if (!B || B.ph === 'leap') return;
+    const K = getKing(), x = Math.round(B.sx), hy = Math.round(B.hy), spr = B.flash > 0 && Math.floor(B.flash * 20) % 2 ? K.f : K.n;
+    const fleeing = B.ph === 'flee' || B.ph === 'retreat';
+    // body column down to the floor
+    // royal robe down to the floor: purple velvet widening downward, ermine front trim, gold belt
+    for (let yy = hy + 46, k = 0; yy < H; yy++, k++) {
+      const hw = Math.min(30, 21 + (k >> 3));
+      ctx.fillStyle = '#1a0a24'; ctx.fillRect(x - hw - 1, yy, hw * 2 + 3, 1);
+      ctx.fillStyle = (k >> 2) % 7 === 3 ? '#3e1458' : '#4a1a6a'; ctx.fillRect(x - hw, yy, hw * 2 + 1, 1);
+      ctx.fillStyle = '#6a2a92'; ctx.fillRect(x - hw + 3, yy, 3, 1); ctx.fillStyle = '#2e0e42'; ctx.fillRect(x + hw - 5, yy, 4, 1);
+      ctx.fillStyle = '#f2ece0'; ctx.fillRect(x - 5, yy, 11, 1);
+      if ((k % 9) === 4) { ctx.fillStyle = '#16101e'; ctx.fillRect(x - 2 + ((k / 9) & 1 ? 3 : -1), yy, 1, 2); }
+    }
+    ctx.fillStyle = '#7a5a00'; ctx.fillRect(x - 23, hy + 62, 47, 5); ctx.fillStyle = '#FFCC00'; ctx.fillRect(x - 22, hy + 63, 45, 3); ctx.fillStyle = '#fff3a0'; ctx.fillRect(x - 3, hy + 62, 7, 5); ctx.fillStyle = '#D9584E'; ctx.fillRect(x - 1, hy + 63, 3, 3);
+    ctx.drawImage(spr, x - 30, hy - 12);
+    // red-candle sceptre in his paw (raised while winding up a throw)
+    const up = B.ph === 'throw' && B.t < 0.7 ? -Math.round(18 * Math.min(1, B.t / 0.3)) : B.ph === 'throw' && B.n < 3 ? -10 : 0;
+    const scx = x - 24, scy = hy + 14 + up;
+    ctx.fillStyle = '#5a1f1c'; ctx.fillRect(scx - 3, scy, 7, 24); ctx.fillStyle = '#D9584E'; ctx.fillRect(scx - 2, scy + 1, 5, 22); ctx.fillStyle = '#ee8070'; ctx.fillRect(scx - 2, scy + 1, 1, 22);
+    ctx.fillStyle = '#5a1f1c'; ctx.fillRect(scx, scy - 5, 1, 5);
+    const fl = Math.floor(bgT * 12) % 2; ctx.fillStyle = '#ff8a2a'; ctx.fillRect(scx - 1, scy - 9 - fl, 3, 4 + fl); ctx.fillStyle = '#FFE500'; ctx.fillRect(scx, scy - 8, 1, 2);
+    // telegraphs
+    const warnOn = Math.floor(bgT * 10) % 2 === 0;
+    if ((B.ph === 'lunge' || (B.ph === 'throw' && B.t < 0.7) || (B.ph === 'wave' && B.t < 0.6)) && warnOn) {
+      text('!', x - 2, hy - 26, '#ff5a4a', { scale: 2, bold: true, shadow: '#1a0606' });
+      if (B.ph === 'lunge') { ctx.fillStyle = 'rgba(255,60,40,0.35)'; ctx.fillRect(0, Math.round(B.ly), W, 30); }
+    }
+    if (fleeing && Math.floor(bgT * 4) % 2) text(B.ph === 'flee' ? 'NOOO!' : 'NEXT TIME...', x - 6, hy - 30, '#ffd0c8', { align: 'center', shadow: '#1a0606' });
+  }
+  function drawWaves(sx) {
+    for (const q of waves) {
+      const x = Math.round(q.x - sx), y = Math.round(q.y), f = Math.floor(bgT * 16) % 2;
+      if (x < -20 || x > W + 20) continue;
+      for (let i = 0; i < 7; i++) { const hw = 7 - i; ctx.fillStyle = i < 2 ? '#ffffff' : i < 4 ? '#ffb040' : '#D9584E'; ctx.fillRect(x - hw, y - 1 - i - f, 1, 1); ctx.fillRect(x + hw, y - 1 - i - f, 1, 1); ctx.fillRect(x - hw + 1, y - 1 - i, hw * 2 - 1, 1); }
+      ctx.fillStyle = 'rgba(255,90,60,0.35)'; ctx.fillRect(x - 10, y - 12, 20, 12);
+    }
+  }
+  function drawShadows(sx) {
+    const runF = ['run1', 'run2', 'run3', 'run4'];
+    for (const q of shadows) {
+      if (q.gone) continue;
+      const y = Math.round(q.y);
+      if (q.warn > 0) { // "!" + arrow at the left edge at the height it will come through
+        if (Math.floor(q.warn * 10) % 2 === 0) { ctx.fillStyle = '#5a2a9a'; ctx.fillRect(1, y - 30, 11, 13); text('!', 4, y - 27, '#ff2a4a'); ctx.fillStyle = '#ff2a4a'; for (let i = 0; i < 4; i++) ctx.fillRect(14 + i, y - 27 + i, 1, 7 - i * 2); }
+        continue;
+      }
+      const x = Math.round(q.x - sx); if (x < -40 || x > W + 40) continue;
+      if (q.lock && q.x < cat.x + 10 && Math.floor(bgT * 8) % 2) { ctx.fillStyle = 'rgba(255,42,74,0.55)'; for (let xx = x + 12; xx < Math.round(cat.x - sx) + 30; xx += 4) ctx.fillRect(xx, y - 1, 2, 1); }
+      const fr = getShadow(runF[Math.floor(q.f * 14) % 4]);
+      ctx.globalAlpha = 0.18; ctx.drawImage(fr.aura, x - 19 - 14, y - 46); ctx.globalAlpha = 0.32; ctx.drawImage(fr.aura, x - 19 - 7, y - 46);
+      ctx.globalAlpha = 0.85; ctx.drawImage(fr.aura, x - 20, y - 46); ctx.drawImage(fr.aura, x - 18, y - 46); ctx.drawImage(fr.aura, x - 19, y - 47);
+      ctx.globalAlpha = 1; ctx.drawImage(fr.body, x - 19, y - 46);
+    }
+  }
+  function drawMeteor(f, sx) {
+    const x = Math.round(f.x - sx), y = Math.round(f.y);
+    for (let i = 1; i < 8; i++) { ctx.fillStyle = i < 3 ? '#FFE500' : i < 5 ? '#ff8a2a' : 'rgba(217,88,78,0.6)'; ctx.fillRect(x + 2 + i * 2, y - i * 3, 4, 3); }
+    ctx.fillStyle = '#3a2a1a'; ctx.fillRect(x - 6, y, 12, 12); ctx.fillRect(x - 5, y - 1, 10, 14); ctx.fillStyle = '#8a6a4a'; ctx.fillRect(x - 5, y + 1, 10, 10); ctx.fillStyle = '#c8a070'; ctx.fillRect(x - 4, y + 2, 3, 2); ctx.fillStyle = '#5a4030'; ctx.fillRect(x + 1, y + 6, 3, 3);
+  }
+
+  // ---------- v5 screens: cutscene, YOU MADE IT, trophies view, toasts, credits, share ----------
+  function drawEnding() {
+    const t = stateT, R = getRocket(), E2 = endInfo || { rsx: W * 0.6, gy: baseY - 64 };
+    const cs = (Math.random() * 2 - 1) * shake * 6; ctx.save(); ctx.translate(Math.round(cs), 0);
+    if (t < 6.5) { // 1-3: board, countdown, liftoff on the pad at dawn
+      BG.drawZone(STAGES, 1, {}); drawWorld(true);
+      const rx = Math.round(E2.rsx), gy = E2.gy, lift = t < 4.5 ? 0 : Math.round(60 * Math.pow(t - 4.5, 2) + 12 * (t - 4.5));
+      drawGantry(rx - 30, gy, 70);
+      if (t < 4.5 || Math.floor(t * 8) % 2) { ctx.fillStyle = '#463a5c'; ctx.fillRect(rx - 18 - (t > 4.5 ? Math.round((t - 4.5) * 20) : 0), gy - 40, 10, 2); }
+      if (t >= 4.2) { drawFlame(rx, gy - 2 - lift, 10, 10 + Math.min(18, Math.round((t - 4.2) * 20)), 0); if (Math.random() < 0.9) for (let i = 0; i < 4; i++) csParts.push({ x: rx + (Math.random() * 30 - 15), y: gy - lift + 4, vx: (Math.random() - 0.5) * 90, vy: -Math.random() * 30, l: 0.6 + Math.random() * 0.8, c: ['#d8d0e8', '#a8a0c0', '#ffffff', '#ffb040'][i], s: Math.random() < 0.5 ? 3 : 2, g: 0 }); }
+      ctx.drawImage(R.up, rx - 16, gy - 62 - lift);
+      if (t < 1.6) { // Decicat runs to the rocket and hops in
+        const k = Math.min(1, t / 1.1), cx = Math.round(cat.sx + (rx - 2 - cat.sx) * k), hop = t > 1.1 ? Math.round(Math.sin(Math.min(1, (t - 1.1) / 0.5) * Math.PI) * 26) : 0;
+        if (t < 1.45) drawSpr(t > 1.1 ? skinFrames(skinId).jump : skinFrames(skinId)[['run1', 'run2', 'run3', 'run4'][Math.floor(t * 12) % 4]], cx - 19, gy - 46 - hop);
+      } else if (t < 4.5 && Math.floor(t * 4) % 2) { ctx.fillStyle = '#FFE500'; ctx.fillRect(rx - 4, gy - 42, 8, 1); }
+      if (t >= 1.5 && t < 4.5) { const n = 3 - Math.floor(t - 1.5), f = (t - 1.5) % 1, sc = f < 0.15 ? 5 : 4; text(String(n), W / 2, Math.round(playTop + playH * 0.22), '#FFE500', { align: 'center', scale: sc, bold: true, shadow: '#5a2a8a' }); }
+      if (t >= 4.5 && t < 6) text('LIFTOFF!', W / 2, Math.round(playTop + playH * 0.22), '#ffffff', { align: 'center', scale: textW('LIFTOFF!', 3, true) < W - 10 ? 3 : 2, bold: true, shadow: '#d9584e' });
+    } else if (t < 9.5) { // 4: through the To-The-Moon sky (the retired zone-5 art)
+      csCam = (t - 6.5) * 520; csZP = Math.min(1, (t - 6.5) / 3);
+      BG.drawZone(0, 1, {});
+      const by = Math.round(H * 0.45 + Math.sin(t * 3) * 4), bx = Math.round(W * 0.3 + (t - 6.5) * W * 0.12);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'; for (let i = 0; i < 24; i++) { const sy = Math.round(hash01(i * 7) * H), sx2 = Math.round(W - ((t * 600 + i * 97) % (W + 60))); ctx.fillRect(sx2, sy, 8 + (i % 3) * 6, 1); }
+      for (let i = 0; i < 6; i++) { ctx.fillStyle = ['#ffffff', '#FFE500', '#ff8a2a', '#D9584E', '#a8a0c0', '#5a4a7a'][i]; ctx.fillRect(bx - 4 - i * 6 - (Math.floor(bgT * 20) % 2) * 2, by + 11 - Math.max(1, 5 - i), 6, Math.max(2, 10 - i * 1.4)); }
+      ctx.drawImage(R.side, bx, by);
+      if (t < 8.6) text('TO THE MOON...', W / 2, Math.round(playTop + playH * 0.14), '#FFE500', { align: 'center', bold: true, shadow: '#2a1d4a' });
+    } else { // 5: landing on the big yellow Decibel moon + TRADE LOUD. + fireworks
+      csCam = 1560 + (t - 9.5) * 40; csZP = 1; BG.drawZone(0, 1, { noIcon: true });
+      const r = Math.max(48, Math.round(Math.min(W * 0.4, H * 0.32))), cx = Math.round(W / 2), cyF = H - r - 6;
+      const rise = Math.min(1, (t - 9.5) / 0.9), cy = Math.round(cyF + (1 - rise) * (1 - rise) * (r + 40));
+      drawMoon(cx, cy, r);
+      const a = -0.62, px = Math.round(cx + Math.sin(a) * r), py = Math.round(cy - Math.cos(a) * r) + 2;
+      const k = Math.min(1, Math.max(0, (t - 9.7) / 1.0)), ry = Math.round(py - (1 - k) * (1 - k) * (py + 70));
+      if (k < 1) drawFlame(px, ry - 2, 10, 14, 1);
+      ctx.drawImage(R.up, px - 16, ry - 62);
+      if (t >= 11) { const ccx = Math.round(cx + Math.sin(0.25) * r), ccy = Math.round(cy - Math.cos(0.25) * r) + 3, hop = t < 11.3 ? Math.round(Math.sin((t - 11) / 0.3 * Math.PI) * 14) : 0; drawSpr(skinFrames('astro').idle, ccx - 19, ccy - 46 - hop); ctx.drawImage(getHelmet(), ccx - 23, ccy - 46 - hop - 9); }
+      if (t >= 11.1) { const sc = textW('TRADE LOUD.', 3, true) <= W - 8 ? 3 : 2; text('TRADE LOUD.', W / 2, Math.max(6, Math.round(playTop + 8)), '#FFE500', { align: 'center', scale: sc, bold: true, shadow: '#8a2fb8' }); }
+      if (t >= 11.1 && Math.random() < 0.12) { const fx = W * (0.15 + Math.random() * 0.7), fy = H * (0.12 + Math.random() * 0.3), col = ['#FFE500', '#7cfc9a', '#ff5ac8', '#5ab4ff', '#ffffff', '#ff8a2a'][Math.floor(Math.random() * 6)]; for (let i = 0; i < 26; i++) { const an = i / 26 * Math.PI * 2, sp = 40 + Math.random() * 40; csParts.push({ x: fx, y: fy, vx: Math.cos(an) * sp, vy: Math.sin(an) * sp, l: 0.7 + Math.random() * 0.5, c: col, s: 1, g: 60 }); } }
+    }
+    for (const q of csParts) { ctx.globalAlpha = clamp(q.l * 2, 0, 1); ctx.fillStyle = q.c; ctx.fillRect(Math.round(q.x), Math.round(q.y), q.s, q.s); }
+    ctx.globalAlpha = 1; ctx.restore();
+    if (t > 0.5 && Math.floor(bgT * 2) % 2 === 0) text('TAP TO SKIP', W - 4, H - 10, '#bdb3e6', { align: 'right', shadow: '#140b26' });
+  }
+  const fmtTime = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+  function drawMoonWin() {
+    BG.drawZone(STAGES + 1, 1, { noIcon: true });
+    ctx.fillStyle = 'rgba(8,4,18,0.72)'; ctx.fillRect(0, 0, W, H);
+    const E2 = endInfo || { runMs: 0, score: score(), bonus: ENDING_BONUS };
+    const big = textW('TO THE MOON!', 2, true) <= W - 8 ? 2 : 1, lh = big === 2 ? 17 : 10;
+    const total = lh * 2 + 8 + 50 + 10 * 4 + 14; let y = Math.max(4, Math.round((H - total) / 2));
+    text('YOU MADE IT', W / 2, y, '#ffffff', { align: 'center', scale: big, bold: true, shadow: '#5a2a8a' }); y += lh;
+    text('TO THE MOON!', W / 2, y, '#FFE500', { align: 'center', scale: big, bold: true, shadow: '#8a2fb8' }); y += lh + 6;
+    const bob = Math.round(Math.sin(bgT * 3) * 2); drawSpr(skinFrames('astro').idle, W / 2 - 19, y + bob); ctx.drawImage(getHelmet(), W / 2 - 23, y + bob - 9); y += 52;
+    text('RUN TIME ' + fmtTime(E2.runMs), W / 2, y, '#d9d0ff', { align: 'center' }); y += 10;
+    text('SCORE ' + pad6(E2.score), W / 2, y, '#ffffff', { align: 'center' }); y += 10;
+    text('ENDING BONUS +' + E2.bonus, W / 2, y, '#7cfc9a', { align: 'center' }); y += 14;
+    text('NEXT: MOON MODE - ENDLESS', W / 2, y, '#FFE500', { align: 'center' }); y += 10;
+    if (Math.floor(bgT * 2) % 2 === 0) text('TAP TO CONTINUE (' + Math.max(1, Math.ceil(8 - stateT)) + ')', W / 2, y, '#bdb3e6', { align: 'center' });
+  }
+  let achPage = 0;
+  function trophyIcon(x, y, on) {
+    ctx.fillStyle = on ? '#FFE500' : '#4a4070'; ctx.fillRect(x, y, 7, 4); ctx.fillRect(x + 1, y + 4, 5, 1); ctx.fillRect(x + 3, y + 5, 1, 2); ctx.fillRect(x + 1, y + 7, 5, 1);
+    ctx.fillRect(x - 1, y + 1, 1, 2); ctx.fillRect(x + 7, y + 1, 1, 2); if (on) { ctx.fillStyle = '#fff3a0'; ctx.fillRect(x + 1, y, 1, 3); }
+  }
+  function drawAch() {
+    ctx.fillStyle = 'rgba(8,4,18,0.88)'; ctx.fillRect(0, 0, W, H);
+    const rows = ACH.map(a => ({ on: !!achSet[a[0]], name: a[1], desc: a[2], k: 'a' })).concat(SKINS.slice(1).map(s => ({ on: skinUnlocked(s[0]), name: 'SKIN: ' + s[1], desc: 'UNLOCK: ' + ACH.find(a => a[0] === s[2])[1], k: 's', id: s[0] })));
+    const got = ACH.filter(a => achSet[a[0]]).length;
+    text('TROPHIES ' + got + '/' + ACH.length, W / 2, 5, '#FFE500', { align: 'center', bold: true, shadow: '#5a2a8a' });
+    const rh = 19, per = Math.max(3, Math.floor((H - 46) / rh)), pages = Math.ceil(rows.length / per); achPage = clamp(achPage, 0, pages - 1);
+    let y = 18; const x0 = Math.max(4, Math.round(W / 2 - 118));
+    for (const r of rows.slice(achPage * per, achPage * per + per)) {
+      ctx.fillStyle = r.on ? 'rgba(255,229,0,0.10)' : 'rgba(120,100,200,0.08)'; ctx.fillRect(x0 - 2, y - 2, Math.min(W - 4, 240) - 4, rh - 2);
+      if (r.k === 's') { const fr = skinFrames(r.id).idle; ctx.globalAlpha = r.on ? 1 : 0.35; ctx.drawImage(fr, 0, 0, 38, 46, x0, y - 1, 9, 11); ctx.globalAlpha = 1; } else trophyIcon(x0 + 1, y + 2, r.on);
+      text(r.name, x0 + 12, y, r.on ? '#FFE500' : '#9a8ccc');
+      if (textW(r.desc) <= W - x0 - 16) text(r.desc, x0 + 12, y + 8, r.on ? '#d9d0ff' : '#6b5fa0'); else D.TINY.draw(ctx, r.desc, x0 + 12, y + 9, r.on ? '#d9d0ff' : '#6b5fa0');
+      y += rh;
+    }
+    const by = H - 20, bw = 52; UI.back = { x: Math.round(W / 2 - bw / 2) - 3, y: by - 3, w: bw + 6, h: 21 };
+    ctx.fillStyle = '#2a1d4a'; ctx.fillRect(W / 2 - bw / 2 - 1, by - 1, bw + 2, 17); ctx.fillStyle = '#3a2d63'; ctx.fillRect(W / 2 - bw / 2, by, bw, 15); text('BACK', W / 2, by + 4, '#d9d0ff', { align: 'center', bold: true });
+    UI.prev = UI.next = null;
+    if (pages > 1) {
+      text((achPage + 1) + '/' + pages, W / 2 + bw / 2 + 30, by + 4, '#9a8ccc', { align: 'center' });
+      if (achPage > 0) { UI.prev = { x: 2, y: by - 5, w: 40, h: 24 }; text('< PREV', 6, by + 4, '#FFE500'); }
+      if (achPage < pages - 1) { UI.next = { x: W - 42, y: by - 5, w: 40, h: 24 }; text('NEXT >', W - 6, by + 4, '#FFE500', { align: 'right' }); }
+    }
+  }
+  let toastT = 0;
+  function drawToasts(dt) {
+    const q = toasts[0]; if (!q) return;
+    q.t += dt; if (q.t > 2.8) { toasts.shift(); return; }
+    const a = ACH.find(x => x[0] === q.id), l1 = 'TROPHY: ' + a[1], l2 = q.skin ? 'NEW SKIN: ' + q.skin : a[2];
+    const w = Math.min(W - 4, Math.max(textW(l1), textW(l2)) + 22), h = 22, x = Math.round(W / 2 - w / 2);
+    const y = Math.round((state === 'play' ? 26 : 4) + (q.t < 0.2 ? (q.t / 0.2 - 1) * 30 : q.t > 2.5 ? -(q.t - 2.5) / 0.3 * 30 : 0));
+    ctx.fillStyle = '#FFE500'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = '#1a1030'; ctx.fillRect(x, y, w, h);
+    trophyIcon(x + 5, y + 7, true);
+    text(l1, x + 16, y + 3, '#FFE500'); text(l2, x + 16, y + 12, q.skin ? '#7cfc9a' : '#d9d0ff');
+  }
+  const CREDIT1 = 'ORIGINAL DECICAT CONCEPT BY @DONCASTRO.', CREDIT2 = 'GAME BY @ANGELATAPTOS';
+  function creditLines() { return textW(CREDIT1) <= W - 6 ? 2 : 3; }
+  function drawCredits(yb, c1, c2) { // bottom line's top at yb; wraps the concept credit on narrow screens
+    if (creditLines() === 2) text(CREDIT1, W / 2, yb - 9, c1, { align: 'center' });
+    else { text('ORIGINAL DECICAT CONCEPT', W / 2, yb - 18, c1, { align: 'center' }); text('BY @DONCASTRO.', W / 2, yb - 9, c1, { align: 'center' }); }
+    text(CREDIT2, W / 2, yb, c2, { align: 'center' });
+  }
+  const CANON_URL = 'https://decicat.bitcade.xyz/play'; // canonical public link (custom domain; workers.dev keeps working)
+  function shareUrl() { return CONFIG.shareUrl || CANON_URL; }
+  function shareText(R) {
+    const t = fmtTime(R.runMs || 0), where = R.moon ? 'made it TO THE MOON' + (R.zone > STAGES + 1 ? ' (Moon Mode ' + (R.zone - STAGES) + ')' : '') : 'reached Stage ' + Math.min(R.zone, STAGES);
+    const rank = R.ranked && R.rank > 0 && (R.status === 'ok') ? ' #' + R.rank + ' on the board.' : '';
+    return 'I survived ' + t + ' and ' + where + ' in DECICAT \u{1F431}\u200D\u{1F680}' + rank + ' Can you beat me?';
+  }
+  function shareX() {
+    if (!result) return;
+    const url = 'https://x.com/intent/post?text=' + encodeURIComponent(shareText(result)) + '&url=' + encodeURIComponent(shareUrl());
+    lastShare = url;
+    try { window.open(url, '_blank', 'noopener'); } catch (e) { }
+  }
+  let lastShare = null;
 
   // ---------- HUD & screens ----------
   function drawToggles() {
@@ -1291,6 +1831,12 @@
     if (cat.boost > 0) { // boost meter
       const w = 40, x = Math.round(W / 2 - w / 2);
       ctx.fillStyle = '#3a2500'; ctx.fillRect(x - 1, 5, w + 2, 5); ctx.fillStyle = '#FFE500'; ctx.fillRect(x, 6, Math.round(w * cat.boost / BOOST_T), 3);
+    }
+    if (boss && !boss.done) { // Bear King health
+      const bw = 66, bx = Math.round(W / 2 - bw / 2), by = 24;
+      text('BEAR KING', W / 2, by - 9, '#ffb0a0', { align: 'center', shadow: '#140b26' });
+      ctx.fillStyle = '#140b26'; ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = i < boss.hp ? (boss.flash > 0 ? '#ffffff' : '#d9584e') : '#3a2030'; ctx.fillRect(bx + i * 22, by, 20, 5); if (i < boss.hp) { ctx.fillStyle = '#ff9a8a'; ctx.fillRect(bx + i * 22, by, 20, 1); } }
     }
     if (gustT > 0 && Math.floor(bgT * 6) % 2 === 0) text(gust < 0 ? '<< GUST' : 'GUST >>', W / 2, playTop + 30, '#cfd6ff', { align: 'center', shadow: '#0b0f22' });
     // active power-ups: icon + draining timer bar
@@ -1372,8 +1918,8 @@
     const hint = 'SOUND ON', hw = textW(hint) + 14, hx = Math.round(W / 2 - hw / 2), hy = cy + ch + 10 + 7 * big + 12;
     drawSpeaker(hx, hy, true, T); text(hint, hx + 14, hy, '#bdb3e6');
   }
-  function drawTitle() {
-    const T = DBG.poster ? 99 : stateT;
+  function drawTitle(under) {
+    const T = DBG.poster ? 99 : under ? 9 : stateT;
     ctx.fillStyle = 'rgba(8,4,18,0.38)'; ctx.fillRect(0, 0, W, H); // calm the busy city behind the title
     const word = 'DECICAT', sc = W >= 300 && H >= 300 ? 4 : 3, adv = 7 * sc;
     const tw = word.length * adv - sc, x0 = Math.round(W / 2 - tw / 2);
@@ -1410,22 +1956,33 @@
     // ground + cat
     ctx.fillStyle = '#5b4596'; ctx.fillRect(0, gy, W, 1);
     ctx.fillStyle = '#1a1030'; ctx.fillRect(0, gy + 1, W, H - gy - 1);
-    drawSpr((Math.floor(T * 1.6) % 2 && !DBG.poster) ? S.cat.idle2 : S.cat.idle, Math.round(W / 2 - 19 * csc), catTop, false, csc);
-    const credits = () => {
-      text('ART & IDEA BY @DONCASTRO', W / 2, H - 19, '#b4a8e0', { align: 'center' });
-      text('GAME BY @ANGELATAPTOS', W / 2, H - 10, '#8f84c4', { align: 'center' });
-    };
+    const SKT = DBG.poster ? S.cat : skinFrames(skinId);
+    drawSpr((Math.floor(T * 1.6) % 2 && !DBG.poster) ? SKT.idle2 : SKT.idle, Math.round(W / 2 - 19 * csc), catTop, false, csc);
+    if (skinId === 'astro' && !DBG.poster) { const hm = getHelmet(); ctx.drawImage(hm, Math.round(W / 2 - 19 * csc) - 4 * csc, catTop - 9 * csc + ((Math.floor(T * 1.6) % 2) ? csc : 0), hm.width * csc, hm.height * csc); }
+    const credits = () => drawCredits(H - 10, '#b4a8e0', '#8f84c4');
     if (DBG.poster) { text('HOW LONG CAN YOU LAST?', W / 2, subY + 16, '#FFE500', { align: 'center', shadow: '#2a1d4a' }); text('TAP TO PLAY', W / 2, gy + 5, '#ffffff', { align: 'center', bold: true, shadow: '#2a1d4a' }); credits(); return; }
-    if (T > 1.6) {
+    if (T > 1.6 && !under) {
+      // skin picker (arrows beside the cat) + TROPHIES button
+      const cl = Math.round(W / 2 - 19 * csc), cr = cl + 38 * csc, lcx = Math.round(cl / 2), rcx = Math.round((cr + W) / 2), ay = catTop + 22;
+      const arrow = (cx, dir) => { ctx.fillStyle = '#2a1d4a'; ctx.fillRect(cx - 9, ay - 1, 18, 18); ctx.fillStyle = '#3a2d63'; ctx.fillRect(cx - 8, ay, 16, 16); ctx.fillStyle = '#FFE500'; for (let i = 0; i < 5; i++) ctx.fillRect(dir < 0 ? cx + 2 - i : cx - 2 + i, ay + 3 + i, 1, 10 - i * 2); };
+      const nSk = SKINS.filter(q => skinUnlocked(q[0])).length;
+      arrow(lcx, -1); arrow(rcx, 1); UI.skinL = { x: lcx - 12, y: ay - 4, w: 24, h: 24 }; UI.skinR = { x: rcx - 12, y: ay - 4, w: 24, h: 24 };
+      const sn = SKINS.find(q => q[0] === skinId)[1];
+      text('SKIN', rcx, ay + 21, '#9a8ccc', { align: 'center' }); text(sn, rcx, ay + 30, '#FFE500', { align: 'center' }); text(nSk + '/' + SKINS.length, lcx, ay + 21, '#9a8ccc', { align: 'center' });
+      const got = ACH.filter(a => achSet[a[0]]).length, tl = got + '/' + ACH.length, tw2 = textW(tl) + 16, tx2 = Math.round(lcx - tw2 / 2), ty2 = ay + 31;
+      UI.ach = { x: tx2 - 3, y: ty2 - 3, w: tw2 + 6, h: 21 };
+      ctx.fillStyle = '#5a3a00'; ctx.fillRect(tx2 - 1, ty2 - 1, tw2 + 2, 17); ctx.fillStyle = '#2a1d4a'; ctx.fillRect(tx2, ty2, tw2, 15); trophyIcon(tx2 + 4, ty2 + 4, true); text(tl, tx2 + 13, ty2 + 4, '#FFE500');
+      text('TROPHIES', lcx, ty2 + 18, '#9a8ccc', { align: 'center' });
       // name row: current name + EDIT NAME button (both open the editor)
       const custom = !!sanitizeName(LS.get('decicat_name'));
-      const nm = 'NAME: ' + playerName().toUpperCase(), btn = 'EDIT NAME';
+      const nm0 = 'NAME: ' + playerName().toUpperCase(), btn = 'EDIT NAME', lab = textW(nm0) + textW(btn, 1, true) + 22 <= W - 4; // narrow phones drop the NAME: label
+      const nm = lab ? nm0 : playerName().toUpperCase();
       const pw = textW(nm) + 8, bw = textW(btn, 1, true) + 10, tot = pw + 4 + bw;
       const nx = Math.round(W / 2 - tot / 2), ny = subY + 7 + 9, bx = nx + pw + 4;
       UI.name = { x: nx - 2, y: ny - 3, w: tot + 4, h: 21 };
       ctx.fillStyle = '#140c28'; ctx.fillRect(nx, ny, pw, 15);
       ctx.fillStyle = '#6b55b0'; ctx.fillRect(nx, ny, pw, 1); ctx.fillRect(nx, ny + 14, pw, 1); ctx.fillRect(nx, ny, 1, 15); ctx.fillRect(nx + pw - 1, ny, 1, 15);
-      text('NAME:', nx + 4, ny + 4, '#9a8ccc'); text(playerName().toUpperCase(), nx + 4 + 36, ny + 4, custom ? '#FFE500' : '#ffffff');
+      if (lab) text('NAME:', nx + 4, ny + 4, '#9a8ccc'); text(playerName().toUpperCase(), nx + 4 + (lab ? 36 : 0), ny + 4, custom ? '#FFE500' : '#ffffff');
       const pulse = Math.floor(T * 2) % 2 === 0;
       ctx.fillStyle = '#5a3a00'; ctx.fillRect(bx, ny, bw, 15); ctx.fillStyle = pulse ? '#FFE500' : '#f0d040'; ctx.fillRect(bx + 1, ny + 1, bw - 2, 13);
       ctx.fillStyle = '#FFF3A0'; ctx.fillRect(bx + 1, ny + 1, bw - 2, 1);
@@ -1440,7 +1997,9 @@
   function drawOver() {
     ctx.fillStyle = 'rgba(8,4,18,0.84)'; ctx.fillRect(0, 0, W, H);
     const roomy = H >= 300, pitch = roomy ? 10 : 8;
-    const total = roomy ? 18 + 10 + 10 + 11 + TOPN * pitch + 5 + 17 + 34 : 16 + 9 + 9 + 10 + TOPN * pitch + 4 + 16 + 3 + 7;
+    // short screens (480-tall embed, landscape phones) show fewer rows so the credits always fit; your own row is always shown
+    const NR = roomy ? TOPN : Math.max(8, Math.min(TOPN, Math.floor((H - 95 - (creditLines() - 2) * 9) / pitch)));
+    const total = roomy ? 18 + 10 + 10 + 11 + NR * pitch + 5 + 17 + 34 + (creditLines() - 2) * 9 + 9 : 16 + 9 + 9 + 10 + NR * pitch + 4 + 16 + 3 + 7 + creditLines() * 9 + 3;
     const top = Math.max(0, Math.round((H - total) / 2));
     let y = top + (roomy ? 2 : 1);
     const lsc = textW('LIQUIDATED', 2, true) <= W - 8 ? 2 : 1;
@@ -1463,47 +2022,59 @@
     y += roomy ? 10 : 9;
     text(sub, W / 2, y, scol, { align: 'center' });
     const rowW0 = 27 * 6;
-    UI.retry = { x: Math.round(W / 2 - rowW0 / 2) - 4, y: y - 3, w: rowW0 + 8, h: 14 + TOPN * pitch };
+    UI.retry = { x: Math.round(W / 2 - rowW0 / 2) - 4, y: y - 3, w: rowW0 + 8, h: 14 + NR * pitch };
     y += roomy ? 11 : 10;
     const rowW = 27 * 6, tx = Math.round(W / 2 - rowW / 2);
     const empty = !R.top || !R.top.length;
     if (empty && (R.pending || R.board === 'loading' || R.board === 'error')) {
-      const my = y + Math.round(TOPN * pitch / 2) - 8;
+      const my = y + Math.round(NR * pitch / 2) - 8;
       if (R.board === 'error' && !R.pending) {
         const bw2 = 84, bx2 = Math.round(W / 2 - bw2 / 2);
         text("LEADERBOARD DIDN'T LOAD", W / 2, my - 12, '#bdb3e6', { align: 'center' });
         ctx.fillStyle = '#2a1d4a'; ctx.fillRect(bx2 - 1, my - 1, bw2 + 2, 17); ctx.fillStyle = '#3a2d63'; ctx.fillRect(bx2, my, bw2, 15);
         text('TAP TO RETRY', W / 2, my + 4, '#FFE500', { align: 'center' });
       } else if (Math.floor(bgT * 3) % 3 !== 2) text('LOADING...', W / 2, my + 4, '#bdb3e6', { align: 'center' });
-      y += TOPN * pitch;
-    } else for (let i = 0; i < TOPN; i++) {
-      const e = result.top[i], mine = e && result.id && e.id === result.id;
+      y += NR * pitch;
+    } else for (let i0 = 0, myI = result.top && result.id ? result.top.findIndex(q => q && q.id === result.id) : -1; i0 < NR; i0++) {
+      const i = i0 === NR - 1 && myI >= NR ? myI : i0, e = result.top[i], mine = e && result.id && e.id === result.id;
       if (mine) { ctx.fillStyle = (Math.floor(bgT * 3) % 2) ? '#6b4b00' : '#553c00'; ctx.fillRect(tx - 3, y - 1, rowW + 6, pitch); }
-      else if (i % 2 === 0) { ctx.fillStyle = 'rgba(120,100,200,0.10)'; ctx.fillRect(tx - 3, y - 1, rowW + 6, pitch); }
+      else if (i0 % 2 === 0) { ctx.fillStyle = 'rgba(120,100,200,0.10)'; ctx.fillRect(tx - 3, y - 1, rowW + 6, pitch); }
       const col = mine ? '#FFE500' : (i < 3 ? '#ffffff' : '#bdb3e6');
       text(String(i + 1).padStart(2, ' ') + '.', tx, y, col);
-      text(e ? String(e.name).toUpperCase().slice(0, 16) : '---', tx + 21, y, e ? col : '#5b4f8a');
+      const nm = e ? String(e.name).toUpperCase().slice(0, 16) : '---';
+      text(nm, tx + 21, y, e ? col : '#5b4f8a');
+      if (e && e.moon) drawMoonIcon(tx + 21 + textW(nm) + 3, y);
       if (e) text(pad6(e.score), tx + rowW, y, col, { align: 'right' });
       if (mine) { ctx.fillStyle = '#FFE500'; const ax = tx - 7, ay = y + 1; ctx.fillRect(ax, ay, 1, 5); ctx.fillRect(ax + 1, ay + 1, 1, 3); ctx.fillRect(ax + 2, ay + 2, 1, 1); }
       y += pitch;
     }
     y += roomy ? 5 : 4;
-    // buttons side by side
-    const bw = 92, mw = 52, gap = 8, bx = Math.round(W / 2 - (bw + gap + mw) / 2), mx = bx + bw + gap;
-    UI.again = { x: bx - 3, y: y - 3, w: bw + 6, h: 22 };
-    UI.menu = { x: mx - 3, y: y - 3, w: mw + 6, h: 22 };
+    // buttons side by side: PLAY AGAIN / SHARE ON X / MENU
+    const wide = W >= 236, la = wide ? 'PLAY AGAIN' : 'AGAIN', bw = textW(la, 1, true) + 12, sw = textW('SHARE ON X', 1, true) + 10, mw = textW('MENU', 1, true) + 12, gap = 4;
+    const bx = Math.round(W / 2 - (bw + sw + mw + gap * 2) / 2), shx = bx + bw + gap, mx = shx + sw + gap;
+    UI.again = { x: bx - 2, y: y - 3, w: bw + 4, h: 22 };
+    UI.share = { x: shx - 2, y: y - 3, w: sw + 4, h: 22 };
+    UI.menu = { x: mx - 2, y: y - 3, w: mw + 4, h: 22 };
+    ctx.fillStyle = '#05050a'; ctx.fillRect(shx - 1, y - 1, sw + 2, 17); ctx.fillStyle = '#1d1d26'; ctx.fillRect(shx, y, sw, 15); ctx.fillStyle = '#3a3a48'; ctx.fillRect(shx, y, sw, 1);
+    text('SHARE ON X', shx + Math.round(sw / 2), y + 4, '#ffffff', { align: 'center', bold: true });
     const blink = stateT > 0.7;
     ctx.fillStyle = '#5a3a00'; ctx.fillRect(bx - 1, y - 1, bw + 2, 17);
     ctx.fillStyle = blink ? '#FFE500' : '#8a7a30'; ctx.fillRect(bx, y, bw, 15);
     ctx.fillStyle = '#FFF3A0'; ctx.fillRect(bx, y, bw, 1);
-    text('PLAY AGAIN', bx + Math.round(bw / 2), y + 4, '#2a1a00', { align: 'center', bold: true });
+    text(la, bx + Math.round(bw / 2), y + 4, '#2a1a00', { align: 'center', bold: true });
     ctx.fillStyle = '#2a1d4a'; ctx.fillRect(mx - 1, y - 1, mw + 2, 17); ctx.fillStyle = '#3a2d63'; ctx.fillRect(mx, y, mw, 15);
     text('MENU', mx + Math.round(mw / 2), y + 4, '#d9d0ff', { align: 'center', bold: true });
     y += 17;
     if (roomy) {
       text('TRADE LOUD ON DECIBEL.TRADE', W / 2, y + 8, '#FFE500', { align: 'center' });
-      text('DECICAT ART & IDEA BY @DONCASTRO', W / 2, y + 20, '#7d70b0', { align: 'center' });
-    } else text('TRADE LOUD ON DECIBEL.TRADE', W / 2, y + 2, '#FFE500', { align: 'center' });
+      drawCredits(y + 20 + (creditLines() - 1) * 9, '#7d70b0', '#6a5f9a');
+    } else {
+      text('TRADE LOUD ON DECIBEL.TRADE', W / 2, y + 2, '#FFE500', { align: 'center' });
+      drawCredits(Math.min(y + 11 + (creditLines() - 1) * 9, H - 8), '#7d70b0', '#6a5f9a');
+    }
+  }
+  function drawMoonIcon(x, y) { // little yellow moon = this run reached the ending
+    ctx.fillStyle = '#FFE500'; ctx.fillRect(x + 1, y, 4, 7); ctx.fillRect(x, y + 1, 6, 5); ctx.fillStyle = '#a88400'; ctx.fillRect(x + 3, y + 2, 1, 1); ctx.fillRect(x + 1, y + 4, 1, 1);
   }
   function drawClaim() {
     const R = result; R.claimT = (R.claimT || 0) + 1 / 60;
@@ -1535,6 +2106,9 @@
     drawBackground();
     if (state === 'gate') { drawGate(); return; }
     if (state === 'title') { drawTitle(); if (!DBG.poster) drawToggles(); return; }
+    if (state === 'ach') { drawTitle(true); drawAch(); return; }
+    if (state === 'ending') { drawEnding(); return; }
+    if (state === 'moonwin') { drawMoonWin(); drawToggles(); return; }
     drawWorld();
     if (pwT.slow > 0 && state === 'play') { ctx.fillStyle = 'rgba(255,216,74,0.07)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(255,216,74,0.35)'; ctx.fillRect(0, 0, W, 1); ctx.fillRect(0, H - 1, W, 1); }
     if (state === 'play' || state === 'dying') { drawFlipFx(); drawBanner(); drawHUD(); }
@@ -1542,6 +2116,7 @@
     if (paused && state === 'play') drawPause();
     if (MEM) drawMem();
   }
+  function renderTop(dt) { ctx.setTransform(1, 0, 0, 1, 0, 0); drawToasts(dt); }
 
   let memFps = 0, memFrames = 0, memT = 0, memTxt = [];
   function drawMem() {
@@ -1573,7 +2148,7 @@
     acc += real; let n = 0;
     while (acc >= FIX && n < 8) { update(FIX); acc -= FIX; n++; }
     if (n >= 8) acc = 0; // way behind (tab was hidden): drop the backlog instead of fast-forwarding
-    render();
+    render(); renderTop(real);
   }
   resize();
   if (DBG.autostart) startGame();
@@ -1588,6 +2163,10 @@
     get ui() { return UI; }, get audio() { const A = D.Audio; return A && { ctx: A.ctx ? A.ctx.state : null, song: A.cur ? A.cur.name : null, music: A.musicOn, sfx: A.sfxOn }; },
     get dbgStage() { return { onWhale: cat.g && plats.some(w => w.k === 'w' && surf(w, cat.x, 10) !== null && Math.abs(surf(w, cat.x, 10) - cat.y) < 3), inPress: presses.some(q => q.ph === 3 && cat.x > q.x0 + 10 && cat.x < q.x1 - 10), flipWarn: !!flipWarn, grav, cat: { x: cat.x, y: cat.y, vy: cat.vy, g: cat.g }, presses: presses.map(q => ({ x0: q.x0, x1: q.x1, fy: q.fy, ph: q.ph, bot: q.bot })), plats: plats.filter(p => p.k === 'c' && Math.abs(p.x - cat.x) < 80).map(p => [Math.round(p.x), p.w, Math.round(p.y), p.red ? 1 : 0, p.plate ? 1 : 0]) }; },
     pw: k => pickItem({ k, x: cat.x, y: cat.y - 22 }), zoneName, showItems: () => { PW_KEYS.forEach((k, i) => items.push({ k, x: cat.x + 60 + i * 50, y: cat.y - 40 })); }, get pwState() { return { shield: shieldOn, mag: +pwT.mag.toFixed(2), slow: +pwT.slow.toFixed(2), dia: +pwT.dia.toFixed(2), grav }; },
+    get dbgShadows() { return shadows.map(q => ({ x: Math.round(q.x - cat.x), y: Math.round(q.y), w: +q.warn.toFixed(2) })); },
+    get v5() { return { boss: boss && { ph: boss.ph, hp: boss.hp, sx: boss.sx, hy: boss.hy, done: boss.done }, shadows: shadows.length, waves: waves.length, launchPad, reachedMoon, endInfo, skin: skinId, ach: Object.keys(achSet), stats, toasts: toasts.length, lastShare, pending: !!pendingBanner }; },
+    shareText: () => result && shareText(result), shareUrl, setSkin: id => { skinId = id; }, unlockAll: () => { ACH.forEach(a => { achSet[a[0]] = achSet[a[0]] || 1; }); LS.set(ACHKEY, JSON.stringify(achSet)); }, achReset: () => { achSet = {}; stats = {}; LS.set(ACHKEY, '{}'); LS.set(STATKEY, '{}'); skinId = 'classic'; toasts.length = 0; },
+    toEnding: () => { if (state === 'play') reachEnding(); }, skin: id => skinFrames(id), stageLabel, ztype, get achPage() { return achPage; }, set achPage(v) { achPage = v; },
     kill: () => die('test'), simulate, get replay() { return lastReplay; }, get version() { return VERSION; }, get simFrame() { return simFrame; }, Scores, LocalScores, RemoteScores, sanitizeName
   };
 })(window.DECICAT);

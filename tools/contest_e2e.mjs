@@ -23,7 +23,7 @@ for (let tries = 0; tries < 6; tries++) {
   if (res.ranked && res.rank > 0) break;
   await p.waitForTimeout(800);
 }
-ok(res.status === 'ok' && res.rank > 0 && res.rank <= 20, `run placed #${res.rank} (${res.score} pts)`);
+ok(res.status === 'ok' && res.rank > 0 && res.rank <= 5, `run placed #${res.rank} (${res.score} pts)`);
 ok(/^DCAT-[2-9A-Z]{4}-[2-9A-Z]{2}$/.test(res.claim || ''), 'claim code shown: ' + res.claim);
 await p.waitForTimeout(1600); await p.screenshot({ path: OUT + 'v4_claimcode.png' });
 const hist = await p.evaluate(() => JSON.parse(localStorage.getItem('decicat_claims_v1') || '[]'));

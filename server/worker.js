@@ -7,6 +7,8 @@
 //                       and get the identical score. Replays are kept ONLY while the run is in the top 50.
 //                       A top-20 run gets a private claim code (DCAT-XXXX-XX); only its SHA-256 is stored.
 //   GET  /api/admin/entries?n=50, /api/admin/entry?id=|rank=   (header x-admin-key: ADMIN_KEY secret) -> entries + replays
+//   POST /api/admin/verify {id, ok, moon}  (admin) -> stores the verify.mjs re-sim result; reachedMoon shown on the
+//                       board = the verified flag when present, else the client's claim (display only)
 //   GET  /play       -> share page with X (Twitter) player-card meta tags
 //   GET  /embed      -> the game itself (frameable by x.com / twitter.com), online leaderboard on
 //   GET  /card.png   -> poster image for the card
@@ -20,7 +22,8 @@ import CARD_PNG from './card.png';
 
 const TOP_N = 20;
 const MAX_PTS_PER_SEC = 600;   // sustained real play is ~100-280/s even with back-to-back 40x boosts; bursts are covered by MAX_BONUS
-const MAX_BONUS = 5000;        // slack for short runs that catch a boost + coin trail
+const MAX_BONUS = 20000;       // slack for bonuses (40x, coins, Bear King +5000, rocket ending +10000)
+const MOON_MIN_MS = 440000;    // the ending needs all 10 stages (10 x 45 s of sim time); shorter 'moon' claims are ignored
 const MIN_RANKED_MS = 2000;    // shorter runs are stored but not ranked (never an error)
 const MAX_RUN_MS = 2 * 60 * 60 * 1000;
 const RATE_PER_MIN = 30;       // score posts per IP per minute (friends often share an IP)
@@ -78,7 +81,7 @@ export class Leaderboard extends DurableObject {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`);
       // v4 columns (idempotent migration of the live table): replay JSON (top 50 only), claim-code hash, client version, had-replay flag
       const cols = new Set(this.sql.exec(`PRAGMA table_info(scores)`).toArray().map(c => c.name));
-      for (const [c, t] of [['replay', 'TEXT'], ['claim_hash', 'TEXT'], ['ver', 'TEXT'], ['rp', 'INTEGER NOT NULL DEFAULT 0'], ['note', 'TEXT']]) if (!cols.has(c)) this.sql.exec(`ALTER TABLE scores ADD COLUMN ${c} ${t}`);
+      for (const [c, t] of [['replay', 'TEXT'], ['claim_hash', 'TEXT'], ['ver', 'TEXT'], ['rp', 'INTEGER NOT NULL DEFAULT 0'], ['note', 'TEXT'], ['moon', 'INTEGER NOT NULL DEFAULT 0'], ['v_ok', 'INTEGER'], ['v_moon', 'INTEGER'], ['v_at', 'INTEGER']]) if (!cols.has(c)) this.sql.exec(`ALTER TABLE scores ADD COLUMN ${c} ${t}`);
       await this.importLegacy();
     });
   }
@@ -99,7 +102,7 @@ export class Leaderboard extends DurableObject {
     }
     this.sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('kv_imported', ?)`, JSON.stringify({ at: Date.now(), n }));
   }
-  topList() { return this.sql.exec(`SELECT id, name, score, rp AS vf FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray(); }
+  topList() { return this.sql.exec(`SELECT id, name, score, rp AS vf, COALESCE(v_moon, moon) AS moon FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray(); }
   total() { return this.sql.exec(`SELECT COUNT(*) AS c FROM scores WHERE ranked = 1`).one().c; }
   rankOf(id) {
     const r = this.sql.exec(`SELECT score, at, ranked FROM scores WHERE id = ?`, id).toArray()[0];
@@ -127,7 +130,7 @@ export class Leaderboard extends DurableObject {
     const debugRun = !!(rp && rp.dbg) && this.env.DEV !== '1';
     const ranked = runMs >= MIN_RANKED_MS && !debugRun ? 1 : 0;
     const id = now.toString(36) + Math.random().toString(36).slice(2, 8);
-    this.sql.exec(`INSERT INTO scores (id, name, score, run_ms, at, ranked, ver, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, sanitizeName(body.name), score, runMs, now, ranked, String(body.v || (rp && rp.v) || '').slice(0, 16), debugRun ? 'debug' : null);
+    this.sql.exec(`INSERT INTO scores (id, name, score, run_ms, at, ranked, ver, note, moon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, sanitizeName(body.name), score, runMs, now, ranked, String(body.v || (rp && rp.v) || '').slice(0, 16), debugRun ? 'debug' : null, body.moon && runMs >= MOON_MIN_MS ? 1 : 0);
     this.sql.exec(`INSERT INTO nonces (nonce, id, at) VALUES (?, ?, ?)`, nonce, id, now);
     const rank = this.rankOf(id);
     if (rp && rank > 0 && rank <= REPLAY_TOP) {
@@ -152,18 +155,25 @@ export class Leaderboard extends DurableObject {
   }
   // ---- admin (secret-protected in the fetch handler) ----
   adminRows(where, args) {
-    return this.sql.exec(`SELECT id, name, score, run_ms, at, ranked, ver, rp, note, claim_hash, replay FROM scores ${where}`, ...args).toArray();
+    return this.sql.exec(`SELECT id, name, score, run_ms, at, ranked, ver, rp, note, claim_hash, replay, moon, v_ok, v_moon, v_at FROM scores ${where}`, ...args).toArray();
   }
   async adminEntries(n) {
     const rows = this.adminRows(`WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, [Math.max(1, Math.min(500, n || 50))]);
-    return { entries: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, score: r.score, runMs: r.run_ms, at: r.at, ver: r.ver, hasReplay: !!r.replay, verifiable: !!r.replay, unverified: !r.rp, claimHash: r.claim_hash || null })), total: this.total() };
+    return { entries: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, score: r.score, runMs: r.run_ms, at: r.at, ver: r.ver, hasReplay: !!r.replay, verifiable: !!r.replay, unverified: !r.rp, claimHash: r.claim_hash || null, moon: !!r.moon, verified: r.v_ok === null ? null : !!r.v_ok, reachedMoon: r.v_moon === null ? null : !!r.v_moon })), total: this.total() };
+  }
+  // verify.mjs posts its re-sim result: v_moon (derived from the replay) overrides the client's moon claim on the board
+  async adminVerify(id, ok, moon) {
+    const r = this.sql.exec(`SELECT id FROM scores WHERE id = ?`, String(id || '')).toArray()[0];
+    if (!r) return null;
+    this.sql.exec(`UPDATE scores SET v_ok = ?, v_moon = ?, v_at = ? WHERE id = ?`, ok ? 1 : 0, moon ? 1 : 0, Date.now(), r.id);
+    return { ok: true, id: r.id, verified: !!ok, reachedMoon: !!moon };
   }
   async adminEntry(id, rank) {
     let r;
     if (id) r = this.adminRows(`WHERE id = ?`, [String(id)])[0];
     else if (rank) r = this.adminRows(`WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT 1 OFFSET ?`, [Math.max(0, (rank | 0) - 1)])[0];
     if (!r) return null;
-    return { rank: this.rankOf(r.id), id: r.id, name: r.name, score: r.score, runMs: r.run_ms, at: r.at, ranked: !!r.ranked, ver: r.ver, note: r.note, unverified: !r.rp, claimHash: r.claim_hash || null, replay: r.replay ? JSON.parse(r.replay) : null };
+    return { rank: this.rankOf(r.id), id: r.id, name: r.name, score: r.score, runMs: r.run_ms, at: r.at, ranked: !!r.ranked, ver: r.ver, note: r.note, unverified: !r.rp, claimHash: r.claim_hash || null, moon: !!r.moon, verified: r.v_ok === null ? null : !!r.v_ok, reachedMoon: r.v_moon === null ? null : !!r.v_moon, verifiedAt: r.v_at || null, replay: r.replay ? JSON.parse(r.replay) : null };
   }
 }
 
@@ -186,10 +196,15 @@ export default {
         return json(r.body, r.status, r.status === 429 ? { 'retry-after': String(r.body.retryAfter || 5) } : {});
       } catch (e) { return json({ ok: false, error: 'unavailable' }, 503, { 'retry-after': '2' }); }
     }
-    if (url.pathname.startsWith('/api/admin/') && req.method === 'GET') {
+    if (url.pathname.startsWith('/api/admin/') && (req.method === 'GET' || req.method === 'POST')) {
       if (!env.ADMIN_KEY) return json({ ok: false, error: 'admin disabled' }, 503);
       if (!timingSafeEq(req.headers.get('x-admin-key') || '', env.ADMIN_KEY)) return json({ ok: false, error: 'forbidden' }, 403);
       try {
+        if (url.pathname === '/api/admin/verify' && req.method === 'POST') {
+          let b; try { b = await req.json(); } catch { return json({ ok: false, error: 'bad json' }, 400); }
+          const v = await board(env).adminVerify(b && b.id, !!(b && b.ok), !!(b && b.moon));
+          return v ? json(v) : json({ ok: false, error: 'not found' }, 404);
+        }
         if (url.pathname === '/api/admin/entries') return json(await board(env).adminEntries(parseInt(url.searchParams.get('n') || '50', 10)));
         if (url.pathname === '/api/admin/entry') {
           const e = await board(env).adminEntry(url.searchParams.get('id'), parseInt(url.searchParams.get('rank') || '0', 10));

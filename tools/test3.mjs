@@ -1,9 +1,10 @@
 import { chromium } from 'playwright-core';
 import { execSync } from 'node:child_process';
+const URL0 = 'file://' + ROOT + '/dist/decicat.html';
+const OUT = process.env.OUT || '/tmp/t3/'; // regression screenshots (the v3 deliverables in shots/ are kept as they were)
+import { mkdirSync } from 'node:fs'; mkdirSync(OUT, { recursive: true });
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, ''); // repo root
 const CHROME = process.env.CHROME || '/usr/bin/google-chrome';
-const URL0 = 'file://' + ROOT + '/dist/decicat.html';
-const OUT = ROOT + '/shots/';
 const b = await chromium.launch({ executablePath: CHROME });
 const allErrs = []; let fails = 0;
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
@@ -50,16 +51,16 @@ const audio = p => p.evaluate(() => __decicat.audio);
   ok(await p2.evaluate(() => __decicat.state) === 'title' && (await audio(p2)).song === 'title', 'MENU -> title with title music');
   await ctx.close(); }
 
-// 2. zones (480x480): the 7-stage rotation + first loop zone (8 = ORDER BOOK II)
-for (const z of [1, 2, 3, 4, 5, 6, 7, 8]) {
+// 2. zones (480x480): the 10 stages
+for (const z of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
   const { p, ctx } = await page(sq, `?manual&autostart&bot&god&seed=11&zone=${z}`);
   await p.evaluate(() => __decicat.advance(330));
   await p.screenshot({ path: OUT + `v3_zone${z}.png` }); await ctx.close();
 }
 execSync(`cd ${OUT} && ffmpeg -y -loglevel error ${[1, 2, 3, 4, 5, 6, 7, 8].map(z => '-i v3_zone' + z + '.png').join(' ')} -filter_complex "[0][1][2][3]hstack=4[a];[4][5][6][7]hstack=4[b];[a][b]vstack" v3_zones_grid.png`);
 { const { p, ctx } = await page(sq, '?manual&nogate');
-  const names = await p.evaluate(() => [1, 2, 3, 4, 5, 6, 7, 8, 14, 15].map(z => __decicat.zoneName(z)));
-  ok(names.join('|') === 'ORDER BOOK|FUNDING STORM|LIQUIDATION RAIN|BEAR MARKET|WHALE WATERS|SHORT SQUEEZE|FLASH CRASH|ORDER BOOK II|FLASH CRASH II|ORDER BOOK III', 'stage rotation: ' + names.join(', '));
+  const names = await p.evaluate(() => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(z => __decicat.zoneName(z)));
+  ok(names.join('|') === 'ORDER BOOK|FUNDING STORM|LIQUIDATION RAIN|BEAR MARKET|WHALE WATERS|SHORT SQUEEZE|FLASH CRASH|FRONT-RUNNER ALLEY|BEAR KING|LAUNCH PAD|MOON MODE|MOON MODE 2', 'stages: ' + names.join(', '));
   await ctx.close(); }
 // 2b. power-ups: shield absorbs one hit, magnet / slow-mo / diamond timers run out
 { const { p, ctx } = await page(sq, '?manual&autostart&seed=21&zone=1');

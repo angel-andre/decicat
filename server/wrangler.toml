@@ -4,6 +4,8 @@ main = "worker.js"
 # account_id = "<YOUR_CLOUDFLARE_ACCOUNT_ID>"   # or set CLOUDFLARE_ACCOUNT_ID in the environment
 compatibility_date = "2026-09-01"
 workers_dev = true
+# custom domain (attached via the API; keep it here so deploys never detach it). workers.dev stays on too.
+routes = [ { pattern = "decicat.bitcade.xyz", custom_domain = true } ]
 
 # legacy KV (v1/v2 scores) - only read once by the Durable Object to import old entries
 [[kv_namespaces]]

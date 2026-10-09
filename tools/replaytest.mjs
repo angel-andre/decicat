@@ -19,13 +19,13 @@ async function check(label, p) {
   ok(sim.score === live.score && sim2.score === sim.score, `${label}: live ${live.score} (zone ${live.zone}, ${live.death}) vs re-sim ${sim.score} (zone ${sim.zone}, ${sim.death}, ${sim.frames} frames, ${live.rp.ev.split('.').length} inputs, ${JSON.stringify(live.rp).length} B)`);
   return live;
 }
-async function waitDeath(p, ms) { try { await p.waitForFunction(() => __decicat.state !== 'play', null, { timeout: ms, polling: 100 }); return true; } catch (e) { return false; } }
+async function waitDeath(p, ms) { try { await p.waitForFunction(() => !['play', 'ending', 'moonwin'].includes(__decicat.state), null, { timeout: ms, polling: 100 }); return true; } catch (e) { return false; } }
 // 1. human-like random keyboard play (variable real frame timing, held jumps of random length)
 for (let k = 0; k < 3; k++) {
   const p = await mk('?nogate&zt=' + ZT + ZQ);
   await p.evaluate(() => __decicat.start());
   const t0 = Date.now();
-  while (Date.now() - t0 < 60000 && await p.evaluate(() => __decicat.state) === 'play') {
+  while (Date.now() - t0 < 60000 && await p.evaluate(() => __decicat.state) !== 'over' && await p.evaluate(() => __decicat.state) !== 'dying') {
     await p.keyboard.down('Space'); await p.waitForTimeout(40 + Math.random() * 250); await p.keyboard.up('Space');
     await p.waitForTimeout(150 + Math.random() * 600);
   }
@@ -48,6 +48,32 @@ for (let k = 0; k < 2; k++) {
   await waitDeath(p, 60000);
   const live = await check('tamper base run', p);
   if (live) { const rp = Object.assign({}, live.rp); rp.seed = (rp.seed ^ 12345) | 0; const s = await verifier.evaluate(rp => __decicat.simulate(rp), rp); ok(s.score !== live.score || s.frames !== live.rp.f, 'different seed -> different result (' + s.score + ' vs ' + live.score + ')'); }
+  await p.context().close();
+}
+// 4. v5: runs through the rocket ending into Moon Mode (stage 9 boss + 10 launch pad first). The cutscene is frozen sim
+//    time: watching it, skipping it, or resizing during it must not change the re-sim.
+if (!process.env.NOEND) for (const mode of ['watch', 'skip+resize']) {
+  let p, st, tries = 0; // the bot is not perfect at the boss/launch pad: retry fresh runs until one reaches the ending
+  for (; tries < 8; tries++) {
+    p = await mk('?nogate&bot&zt=7&zone=9');
+    await p.evaluate(() => __decicat.start());
+    await p.waitForFunction(() => __decicat.state === 'ending' || __decicat.state === 'over' || __decicat.state === 'dying', null, { timeout: 60000, polling: 100 }).catch(() => {});
+    st = await p.evaluate(() => __decicat.state);
+    if (st === 'ending') break;
+    await p.context().close();
+  }
+  console.log(`note: ending run (${mode}) reached the ending on attempt ${tries + 1}`);
+  if (st === 'ending' && mode !== 'watch') {
+    await p.waitForTimeout(1500); await p.setViewportSize({ width: 760, height: 560 }); await p.waitForTimeout(900);
+    await p.evaluate(() => __decicat.press()); await p.waitForTimeout(1600); await p.evaluate(() => __decicat.press());
+  }
+  await p.waitForFunction(() => __decicat.state === 'play' && __decicat.zone > 10 || __decicat.state === 'over' || __decicat.state === 'dying', null, { timeout: 40000, polling: 100 }).catch(() => {});
+  const mm = await p.evaluate(() => __decicat.zone);
+  if (!(await waitDeath(p, 60000))) { await p.evaluate(() => __decicat.press()); }
+  await waitDeath(p, 30000); await p.waitForTimeout(200);
+  const live = await check('ending run (' + mode + ')', p);
+  const sim = live && await verifier.evaluate(rp => __decicat.simulate(rp), live.rp);
+  ok(st === 'ending' && mm > 10 && sim && sim.reachedMoon === true && sim.zone > 10, `ending run (${mode}): reached the ending live (${st}), Moon Mode zone ${mm}, re-sim reachedMoon=${sim && sim.reachedMoon} zone ${sim && sim.zone}`);
   await p.context().close();
 }
 ok(errs.length === 0, 'no console/page errors' + (errs.length ? ': ' + errs.slice(0, 3).join(' | ') : ''));

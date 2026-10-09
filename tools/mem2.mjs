@@ -50,13 +50,22 @@ while ((Date.now() - t0) / 1000 < +secs + 1) {
   const m = Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map(x => [x.name, x.value]));
   let s = { st: '?', z: 0, ms: {} };
   try { s = await f.evaluate(() => ({ st: __decicat.state, z: __decicat.zone, ms: window.__memStats, ca: window.__memStats.canvasArea(), heap: performance.memory ? performance.memory.usedJSHeapSize : 0 })); } catch (e) { }
-  if (isPlay) { if (s.st === 'over' || s.st === 'title') await p.mouse.click(+vw / 2, +vh * 0.8); }
+  if (isPlay) {
+    if (s.st === 'title') await p.mouse.click(+vw / 2, +vh * 0.8);
+    else if (s.st === 'over') { // tap PLAY AGAIN (the centre of the row is SHARE ON X, which opens x.com in a new tab)
+      try {
+        const fr = await (await f.frameElement()).boundingBox();
+        const c = await f.evaluate(() => { const r = __decicat.ui.again, cv = document.querySelector('canvas').getBoundingClientRect(), k = cv.width / __decicat.size[0]; return r && [cv.left + (r.x + r.w / 2) * k, cv.top + (r.y + r.h / 2) * k]; });
+        if (c) await p.mouse.click(fr.x + c[0], fr.y + c[1]);
+      } catch (e) { }
+    }
+  }
   const R = rss();
   const heap = isPlay ? (s.heap / 1048576) : (m.JSHeapUsedSize / 1048576);
   const row = [Math.round((Date.now() - t0) / 1000), s.st, s.z, heap.toFixed(1), R.r + '(' + R.rn + ')', R.g, R.all, s.ms.audioContexts || 0, s.ms.aCreated, s.ca && s.ca.n, s.ca && s.ca.mpx, s.ca && s.ca.bigK, s.ca && s.ca.main];
   rows.push(row); console.log(row.join('  '));
   // taps for manual play (/play): jump a few times per tick
-  for (let i = 0; i < 20; i++) { if (isPlay) { await p.mouse.down(); await p.waitForTimeout(80); await p.mouse.up(); await p.waitForTimeout(420); } else await p.waitForTimeout(500); }
+  for (let i = 0; i < 20; i++) { if (isPlay) { let st2 = 'play'; try { st2 = await F().evaluate(() => __decicat.state); } catch (e) { } if (st2 !== 'play') { await p.waitForTimeout(500); continue; } await p.mouse.move(+vw / 2, +vh * 0.3); await p.mouse.down(); await p.waitForTimeout(80); await p.mouse.up(); await p.waitForTimeout(420); } else await p.waitForTimeout(500); }
   tick++;
   if (doResize === '1') { const [w, h] = sizes[tick % sizes.length]; await p.setViewportSize({ width: w, height: h }); }
 }
