@@ -14,7 +14,7 @@
   const DBG = {
     zone: Math.max(1, parseInt(Q.get('zone') || '1', 10) || 1),
     boost: Q.has('boost'), god: Q.has('god'), bot: Q.has('bot'),
-    manual: Q.has('manual'), poster: Q.has('poster'), autostart: Q.has('autostart'),
+    manual: Q.has('manual'), poster: Q.has('poster'), autostart: Q.has('autostart'), nogate: Q.has('nogate'),
     seed: Q.has('seed') ? (parseInt(Q.get('seed'), 10) || 1) : 0
   };
 
@@ -63,7 +63,7 @@
     if (glyphCache[color]) return glyphCache[color];
     const keys = Object.keys(D.FONT);
     const c = document.createElement('canvas'); c.width = keys.length * 6; c.height = 7;
-    const g = c.getContext('2d'); g.fillStyle = color;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.fillStyle = color;
     const map = {};
     keys.forEach((k, i) => {
       map[k] = i * 6;
@@ -77,6 +77,7 @@
     const adv = (bold ? 7 : 6) * sc;
     if (o.align === 'center') x = Math.round(x - textW(s, sc, bold) / 2);
     else if (o.align === 'right') x = Math.round(x - textW(s, sc, bold));
+    x = Math.round(x); y = Math.round(y); // never draw glyphs at sub-pixel positions (that squashes/duplicates columns)
     if (o.shadow) text(s, x + (o.sx || sc), y + (o.sy || sc), o.shadow, { scale: sc, bold });
     const A = glyphAtlas(color);
     for (let i = 0; i < s.length; i++) {
@@ -93,7 +94,7 @@
   function makeSprite(rows, pal) {
     const w = Math.max(...rows.map(r => r.length)), h = rows.length;
     const c = document.createElement('canvas'); c.width = w; c.height = h;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
     rows.forEach((r, y) => { for (let x = 0; x < r.length; x++) { let p = pal[r[x]]; if (typeof p === 'function') p = p(y); if (p) { g.fillStyle = p; g.fillRect(x, y, 1, 1); } } });
     return c;
   }
@@ -151,36 +152,78 @@
   function playerName() { const n = sanitizeName(LS.get('decicat_name')); return n || anonName; }
 
   // ---------- scores ----------
+  const TOPN = 20; // leaderboard size (worker /api/top returns 20 too)
   class LocalScores {
     constructor(key) { this.key = key || 'decicat_top10_v1'; }
     _load() { try { const a = JSON.parse(LS.get(this.key) || '[]'); return Array.isArray(a) ? a.filter(e => e && typeof e.name === 'string' && isFinite(e.score)) : []; } catch (e) { return []; } }
-    async top() { return this._load().slice(0, 10); }
+    async top() { return this._load().slice(0, TOPN); }
     async submit(r) {
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       const list = this._load(); list.push({ id, name: r.name, score: Math.floor(r.score), runMs: r.runMs, at: Date.now() });
       list.sort((a, b) => b.score - a.score || a.at - b.at);
-      const top = list.slice(0, 10); LS.set(this.key, JSON.stringify(top));
+      const top = list.slice(0, TOPN); LS.set(this.key, JSON.stringify(top));
       return { id, rank: top.findIndex(e => e.id === id) + 1, top };
     }
   }
   class RemoteScores {
-    constructor(base) { this.base = String(base || '').replace(/\/$/, ''); }
-    async top() { const r = await fetch(this.base + '/api/top', { cache: 'no-store' }); if (!r.ok) throw new Error('top ' + r.status); return (await r.json()).top || []; }
-    async submit(r) {
-      const nonce = (crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('') : String(Math.random()).slice(2);
-      const res = await fetch(this.base + '/api/score', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: r.name, score: Math.floor(r.score), runMs: Math.floor(r.runMs), nonce }) });
-      if (!res.ok) throw new Error('score ' + res.status);
-      const j = await res.json(); return { id: j.id, rank: j.rank || 0, top: j.top || [] };
+    constructor(base, opt) { opt = opt || {}; this.base = String(base || '').replace(/\/$/, ''); this.timeout = opt.timeout || 8000; this.backoff = opt.backoff || [700, 1600, 3200]; }
+    async _try(path, init) {
+      const ac = typeof AbortController !== 'undefined' ? new AbortController() : null, tm = ac && setTimeout(() => ac.abort(), this.timeout);
+      try {
+        const res = await fetch(this.base + path, Object.assign({ cache: 'no-store', signal: ac ? ac.signal : undefined }, init));
+        let j = null; try { j = await res.json(); } catch (e) { }
+        return { ok: res.ok && !!j, status: res.status, j, retryAfter: +(res.headers.get('retry-after') || 0) };
+      } catch (e) { return { ok: false, status: 0 }; } finally { if (tm) clearTimeout(tm); }
     }
+    // retries network errors, timeouts, 408/429/5xx with backoff; returns the last response
+    async req(path, init, tries) {
+      let r;
+      for (let i = 0; i <= tries; i++) {
+        r = await this._try(path, init);
+        if (r.ok || !transient(r.status)) return r;
+        if (i < tries) await sleep(r.status === 429 ? Math.min(6000, Math.max(1000, (r.retryAfter || 2) * 1000)) : this.backoff[Math.min(i, this.backoff.length - 1)]);
+      }
+      return r;
+    }
+    async top(tries) { const r = await this.req('/api/top', {}, tries === undefined ? 3 : tries); if (!r.ok) throw new Error('top ' + r.status); return { top: (r.j.top || []).slice(0, TOPN), total: r.j.total || 0 }; }
+    post(it, tries) { return this.req('/api/score', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: it.name, score: it.score, runMs: it.runMs, nonce: it.nonce }) }, tries); }
   }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const transient = st => st === 0 || st === 408 || st === 429 || st >= 500;
+  const mkNonce = () => (window.crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('') : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12)).replace(/[^a-z0-9]/g, '');
   const local = new LocalScores();
+  const QKEY = 'decicat_queue_v1';
+  // Online scores: every score is queued in localStorage BEFORE it is sent and only removed once the server
+  // has it (or rejected it outright), so nothing is lost to a flaky network; the nonce makes resends idempotent.
   const Scores = {
-    backend: CONFIG.scores === 'remote' ? new RemoteScores(CONFIG.apiBase) : local,
+    remote: CONFIG.scores === 'remote' ? new RemoteScores(CONFIG.apiBase, CONFIG.net) : null,
+    lastTop: null,
+    get online() { return !!this.remote; },
+    _q() { try { const a = JSON.parse(LS.get(QKEY) || '[]'); return Array.isArray(a) ? a.filter(i => i && i.nonce) : []; } catch (e) { return []; } },
+    _setQ(a) { LS.set(QKEY, JSON.stringify(a.slice(-100))); },
+    _drop(n) { this._setQ(this._q().filter(i => i.nonce !== n)); },
+    get queued() { return this._q().length; },
+    async _send(it, tries) {
+      const res = await this.remote.post(it, tries);
+      if (res.ok) { this._drop(it.nonce); this.lastTop = (res.j.top || []).slice(0, TOPN); return { status: 'ok', id: res.j.id, rank: res.j.rank || 0, ranked: res.j.ranked !== false, total: res.j.total || 0, top: this.lastTop }; }
+      if (!transient(res.status)) { this._drop(it.nonce); return { status: 'rejected', code: res.status, top: this.lastTop || [] }; }
+      return { status: 'queued', nonce: it.nonce, top: this.lastTop || [] };
+    },
     async submit(r) {
-      if (this.backend !== local) { try { return await this.backend.submit(r); } catch (e) { this.offline = true; } }
-      return local.submit(r);
-    }
+      if (!this.remote) return Object.assign({ status: 'local', ranked: true }, await local.submit(r));
+      const it = { name: r.name, score: Math.floor(r.score), runMs: Math.floor(r.runMs), nonce: mkNonce(), at: Date.now() };
+      this._setQ(this._q().concat([it]));
+      return this._send(it, 3);
+    },
+    async retry(nonce) { const it = this._q().find(i => i.nonce === nonce); if (!it) return null; return this._send(it, 1); },
+    async flush() { // resend anything left from earlier sessions / failed attempts (oldest first)
+      if (!this.remote || this._flushing) return 0; this._flushing = true; let sent = 0;
+      try { for (const it of this._q()) { const r = await this._send(it, 1); if (r.status === 'queued') break; if (r.status === 'ok') sent++; } } finally { this._flushing = false; }
+      return sent;
+    },
+    async top() { if (!this.remote) return { top: await local.top(), total: 0 }; const r = await this.remote.top(); this.lastTop = r.top; return r; }
   };
+  if (Scores.remote) setTimeout(() => { if (Scores.queued) Scores.flush(); }, 1500);
   let best = parseInt(LS.get('decicat_best') || '0', 10) || 0;
 
   // ---------- zones ----------
@@ -215,7 +258,7 @@
   const GRAV = 1000, JUMP = 390, DJUMP = 340, MAXFALL = 560, BOOST_T = 4.0, BOOST_MUL = 1.9, ZONE_T = Q.has('zt') ? Math.max(3, +Q.get('zt') || 25) : 25;
 
   // ---------- state ----------
-  let state = 'title', stateT = 0, paused = false;
+  let state = (DBG.nogate || DBG.poster || DBG.autostart) ? 'title' : 'gate', stateT = 0, paused = false;
   let camX = 0, dist = 0, bonus = 0, coinsN = 0, runT = 0, zone = 1, zoneT = 0, prevZone = 1, zoneFade = 1;
   let plats = [], coins = [], powers = [], bears = [], fallers = [], parts = [], floats = [];
   let nextX = 0, lastTop = 0, moonPending = false, moonSeen = false, padMade = false;
@@ -365,18 +408,36 @@
   async function finishRun() {
     const sc = score(), runMs = Math.round(runT * 1000);
     const isBest = sc > best; if (isBest) { best = sc; LS.set('decicat_best', String(best)); }
-    result = { score: sc, best, isBest, pending: true, rank: 0, top: [], id: null, zone };
+    const R = result = { score: sc, best, isBest, pending: true, status: null, rank: 0, ranked: true, top: Scores.lastTop || [], board: 'loading', id: null, zone };
     Snd.music('gameover', { q: 'now', then: 'results', restart: true });
     if (isBest && sc > 0) Snd.sfx('best');
-    try { const r = await Scores.submit({ name: playerName(), score: sc, runMs }); Object.assign(result, r, { pending: false }); if (r.rank > 0 && !isBest) Snd.sfx('top10'); }
-    catch (e) { result.pending = false; result.top = await local.top(); }
+    let r; try { r = await Scores.submit({ name: playerName(), score: sc, runMs }); } catch (e) { r = { status: 'queued', top: Scores.lastTop || [] }; }
+    applyResult(R, r);
+    if (r.status === 'ok') Scores.flush();
+  }
+  function applyResult(R, r) {
+    Object.assign(R, r, { pending: false });
+    R.board = R.top && R.top.length ? 'ok' : (r.status === 'ok' || r.status === 'local') ? 'ok' : 'loading';
+    if ((r.status === 'ok' || r.status === 'local') && r.rank > 0 && r.rank <= TOPN && !R.isBest) Snd.sfx('top10');
+    if (R.board !== 'ok') loadBoard(R);
+  }
+  function loadBoard(R) {
+    R.board = 'loading';
+    Scores.top().then(t => { if (!R.top.length || R.status !== 'ok') R.top = t.top; R.board = 'ok'; }).catch(() => { R.board = R.top.length ? 'ok' : 'error'; });
+  }
+  async function retryResult() {
+    const R = result; if (!R || R.pending) return;
+    if (R.status === 'queued' && R.nonce) { R.pending = true; let r; try { r = await Scores.retry(R.nonce); } catch (e) { r = null; } R.pending = false; if (r) applyResult(R, r); else loadBoard(R); }
+    else loadBoard(R);
   }
 
+
   // ---------- input ----------
-  const UI = { name: null, music: null, sfx: null, again: null, menu: null };
+  const UI = { name: null, music: null, sfx: null, again: null, menu: null, retry: null };
   const inRect = (r, x, y) => r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
   function toLogical(e) { const b = cv.getBoundingClientRect(); return { x: (e.clientX - b.left) / b.width * W, y: (e.clientY - b.top) / b.height * H }; }
   function press(lx, ly) {
+    if (state === 'gate') return; // the gate is left on the gesture's release (pointerup/touchend/keydown) so audio may start
     const hadAudio = !!(AU && AU.ctx && AU.ctx.state === 'running');
     Snd.init();
     if (lx !== undefined && inRect(UI.music, lx, ly) && !hadAudio && !Snd.musicOn) { AU.setMusic(true); AU.setSfx(true); Snd.sfx('click'); if (state === 'title') Snd.music('title', { q: 'now' }); return; }
@@ -390,6 +451,7 @@
     if (paused) { paused = false; Snd.resume(); return; }
     if (state === 'play') { pressing = true; jumpPress(); return; }
     if (state === 'over' && stateT > 0.7) {
+      if (lx !== undefined && inRect(UI.retry, lx, ly) && result && (result.status === 'queued' || result.board === 'error')) { Snd.sfx('click'); retryResult(); return; }
       if (lx === undefined || inRect(UI.again, lx, ly)) { Snd.sfx('click'); startGame(); return; }
       if (inRect(UI.menu, lx, ly)) { Snd.sfx('click'); state = 'title'; stateT = 0.3; Snd.music('title', { q: 'now' }); return; }
     }
@@ -407,6 +469,14 @@
   // Audio unlock: iOS/Safari only treats touchend / pointerup / click / keydown as user activation (not touchstart / touch pointerdown)
   const unlockAudio = () => { if (!REC && AU && AU.unlock) AU.unlock(); };
   ['pointerup', 'touchend', 'click', 'keydown', 'mousedown'].forEach(ev => document.addEventListener(ev, unlockAudio, { capture: true, passive: true }));
+  // TAP TO START gate: the first real gesture unlocks audio and starts the title theme, then the title screen drops in with the music
+  function leaveGate() {
+    if (state !== 'gate') return;
+    unlockAudio(); Snd.init();
+    state = 'title'; stateT = 0;
+    Snd.sfx('click'); Snd.music('title', { q: 'now', restart: true });
+  }
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, e => { if (state === 'gate' && !(e.key && /^(Shift|Control|Alt|Meta|Tab)$/.test(e.key))) leaveGate(); }, { capture: true, passive: true }));
   cv.addEventListener('pointerdown', e => { e.preventDefault(); const p = toLogical(e); press(p.x, p.y); }, { passive: false });
   window.addEventListener('pointerup', e => { release(); });
   window.addEventListener('pointercancel', () => release());
@@ -428,11 +498,11 @@
   const nameBox = document.getElementById('namebox'), nameIn = document.getElementById('namein'), nameMsg = document.getElementById('namemsg');
   function openNameEditor() {
     if (!nameBox) return;
-    nameOpen = true; nameBox.style.display = 'flex'; nameIn.value = sanitizeName(LS.get('decicat_name')) || ''; nameIn.placeholder = anonName; nameMsg.textContent = 'Max 16 letters/numbers. Leave empty to stay anonymous.';
+    nameOpen = true; nameBox.style.display = 'flex'; nameIn.value = sanitizeName(LS.get('decicat_name')) || ''; nameIn.placeholder = anonName; nameMsg.textContent = 'Shown on the leaderboard. Up to 16 letters/numbers. Leave it empty (or tap Play anonymous) to stay ' + anonName + '.';
     setTimeout(() => nameIn.focus(), 30);
   }
   let nameClosedAt = 0;
-  function closeNameEditor() { nameOpen = false; nameBox.style.display = 'none'; nameIn.blur(); nameClosedAt = performance.now(); }
+  function closeNameEditor() { nameOpen = false; nameBox.style.display = 'none'; nameIn.blur(); nameClosedAt = performance.now(); if (state === 'title') Snd.music('title', { q: 'now' }); }
   if (nameBox) {
     document.getElementById('namesave').onclick = () => {
       const v = nameIn.value.trim();
@@ -451,7 +521,7 @@
   function update(dt) {
     gameClock += dt;
     stateT += dt;
-    if (state === 'title' || state === 'over') { animBg(dt); updParts(dt); return; }
+    if (state === 'title' || state === 'over' || state === 'gate') { animBg(dt); updParts(dt); return; }
     if (paused) return;
     if (state === 'dying') {
       cat.vy = Math.min(cat.vy + GRAV * dt, MAXFALL); cat.y += cat.vy * dt; cat.rot += dt * 8;
@@ -685,79 +755,24 @@
     }
   }
 
-  // ---------- background ----------
-  let bgCache = {}, skyline = [];
-  const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-  function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
-  function skyFor(zt) {
-    if (bgCache[zt]) return bgCache[zt];
-    const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const g = c.getContext('2d'), img = g.createImageData(W, H), d = img.data;
-    const cols = ZONES[zt].sky.map(hex), n = cols.length - 1;
-    for (let y = 0; y < H; y++) {
-      const t = clamp(y / Math.max(1, baseY), 0, 1) * n;
-      const i0 = Math.min(n - 1, Math.floor(t)); const f = t - i0;
-      // quantise into 4 steps per band, dither between them
-      for (let x = 0; x < W; x++) {
-        const th = (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
-        const ci = (f * 3 % 1) > th ? 1 : 0;
-        const q = Math.min(3, Math.floor(f * 3) + ci) / 3;
-        const a = cols[i0], b = cols[i0 + 1];
-        const o = (y * W + x) * 4;
-        d[o] = a[0] + (b[0] - a[0]) * q; d[o + 1] = a[1] + (b[1] - a[1]) * q; d[o + 2] = a[2] + (b[2] - a[2]) * q; d[o + 3] = 255;
-      }
-    }
-    g.putImageData(img, 0, 0);
-    return (bgCache[zt] = c);
-  }
-  let stars = [];
+  // ---------- background (parallax layers live in bg.js) ----------
+  let bgCache = {}, stars = [];
   function buildSkyline() {
     const s0 = seed; seed = 4242;
-    skyline = [[], []];
-    for (let L = 0; L < 2; L++) { let x = 0; while (x < 512) { const w = randi(14, 34), h = L ? randi(14, 46) : randi(26, 70); skyline[L].push({ x, w, h, win: [] }); if (L) for (let k = 0; k < 3; k++) if (rnd() < 0.5) skyline[L][skyline[L].length - 1].win.push([randi(2, w - 3), randi(4, h - 3)]); x += w; } }
     stars = []; for (let i = 0; i < 90; i++) stars.push({ x: rand(0, 1), y: rand(0, 1), b: rnd(), tw: rand(0, 6) });
-    seed = s0;
+    seed = s0; BG.reset();
   }
-  let bgT = 0, rain = [];
+  let bgT = 0;
   function animBg(dt) { bgT += dt; }
-  function drawBgZone(zt, alpha) {
-    if (alpha <= 0) return;
-    ctx.globalAlpha = alpha;
-    ctx.drawImage(skyFor(zt), 0, 0);
-    // stars
-    const dense = zt === 5 ? 1 : 0.6;
-    for (let i = 0; i < stars.length * dense; i++) {
-      const s = stars[i]; const sx = ((s.x * W * 2 - camX * 0.03) % W + W) % W; const sy = s.y * baseY * 0.85;
-      const tw = Math.sin(bgT * 2 + s.tw) > 0.6;
-      ctx.fillStyle = s.b > 0.85 ? '#FFE500' : '#ffffff';
-      if (s.b > 0.93 && tw) { ctx.fillRect(sx - 1, sy, 3, 1); ctx.fillRect(sx, sy - 1, 1, 3); }
-      else if (s.b > 0.3 || tw) ctx.fillRect(sx, sy, 1, 1);
-    }
-    const Z = ZONES[zt];
-    if (zt === 5) {
-      // distant decibel moon
-      drawMoon(W - 30, Math.round(playTop + playH * 0.22), 12, true);
-    }
-    if (Z.city) {
-      for (let L = 0; L < 2; L++) {
-        const par = L ? 0.22 : 0.08; ctx.fillStyle = Z.city[L];
-        const off = (camX * par) % 512;
-        for (let rep = -1; rep < Math.ceil(W / 512) + 1; rep++) for (const b of skyline[L]) {
-          const x = Math.floor(b.x - off + rep * 512); if (x > W || x + b.w < 0) continue;
-          ctx.fillRect(x, baseY - b.h - (L ? 0 : 14), b.w, b.h + (L ? 0 : 14)); 
-          if (L) { ctx.fillStyle = 'rgba(255,229,0,0.35)'; for (const w of b.win) ctx.fillRect(x + w[0], baseY - b.h + w[1], 1, 1); ctx.fillStyle = Z.city[L]; }
-        }
-      }
-      ctx.fillStyle = Z.city[1]; ctx.fillRect(0, baseY, W, H - baseY);
-    } else {
-      ctx.fillStyle = '#05030c'; ctx.fillRect(0, baseY, W, H - baseY);
-    }
-    ctx.globalAlpha = 1;
-  }
+  const BG = D.makeBG({
+    ctx, get W() { return W; }, get H() { return H; }, get baseY() { return baseY; }, get playTop() { return playTop; }, get playH() { return playH; },
+    get camX() { return camX; }, get bgT() { return bgT; }, get gust() { return gust; }, get zoneP() { return Math.min(1, zoneT / ZONE_T); }, get stars() { return stars; },
+    zone: zt => ZONES[zt], text: (s, x, y, c) => text(s, x, y, c), textW: s => textW(s)
+  });
   function drawBackground() {
-    const zt = ztype(zone);
-    if (zoneFade < 1) drawBgZone(ztype(prevZone), 1);
-    drawBgZone(zt, zoneFade < 1 ? zoneFade : 1);
+    const zt = ztype(zone), noIcon = state === 'title' || state === 'gate';
+    if (zoneFade < 1) BG.drawZone(prevZone, 1, { noIcon });
+    BG.drawZone(zone, zoneFade < 1 ? zoneFade : 1, { noIcon });
     // weather
     if (zt === 2 && state !== 'title') {
       ctx.fillStyle = 'rgba(190,200,255,0.55)';
@@ -765,20 +780,13 @@
       for (let i = 0; i < 60; i++) {
         const x = ((i * 53.7 + bgT * (60 + slant * 40) * (i % 3 + 1) - camX * 0.6) % (W + 20) + W + 20) % (W + 20) - 10;
         const y = ((i * 97.3 + bgT * 260 * (1 + (i % 2) * 0.5)) % (baseY + 10));
-        ctx.fillRect(x, y, 1, 4); if (slant > 1) ctx.fillRect(x - 1, y + 3, 1, 3);
+        const rx = Math.round(x), ry = Math.round(y); ctx.fillRect(rx, ry, 1, 4); if (slant > 1) ctx.fillRect(rx - 1, ry + 3, 1, 3);
       }
     }
     if (zt === 3 && state !== 'title') {
       ctx.fillStyle = 'rgba(255,110,90,0.35)';
-      for (let i = 0; i < 30; i++) { const x = ((i * 71.3 - camX * 0.3) % W + W) % W; const y = (i * 37.7 + bgT * 40 * (1 + i % 3)) % baseY; ctx.fillRect(x, y, 1, 2); }
+      for (let i = 0; i < 30; i++) { const x = ((i * 71.3 - camX * 0.3) % W + W) % W; const y = (i * 37.7 + bgT * 40 * (1 + i % 3)) % baseY; ctx.fillRect(Math.round(x), Math.round(y), 1, 2); }
     }
-    if (zt === 2) drawCloud(((W * 0.7 - bgT * 6) % (W + 60) + W + 60) % (W + 60) - 30, playTop + 52, '#5a5f8f', '#43477a');
-    else if (zt === 1) drawCloud(((W * 0.15 - camX * 0.05) % (W + 60) + W + 60) % (W + 60) - 30, playTop + 46, '#6a5aa8', '#54468c');
-  }
-  function drawCloud(x, y, c1, c2) {
-    x = Math.round(x); y = Math.round(y);
-    ctx.fillStyle = c2; ctx.fillRect(x, y + 4, 34, 7); ctx.fillRect(x + 4, y + 2, 26, 11);
-    ctx.fillStyle = c1; ctx.fillRect(x + 6, y, 10, 8); ctx.fillRect(x + 14, y - 2, 12, 9); ctx.fillRect(x + 2, y + 4, 28, 5);
   }
   function drawMoon(cx, cy, r, small) {
     cx = Math.round(cx); cy = Math.round(cy);
@@ -789,26 +797,11 @@
       ctx.fillStyle = '#FFE500'; ctx.fillRect(cx - hw, cy + y, hw * 2 + 1, 1);
       ctx.fillStyle = '#D9A800'; ctx.fillRect(cx + hw - Math.max(1, Math.round(r * 0.06)), cy + y, Math.max(1, Math.round(r * 0.06)), 1); ctx.fillRect(cx - hw, cy + y, 1, 1);
     }
-    // Decibel-style blobs (left tall blob + two tilted blobs on the right)
-    const blob = (bx, by, rx, ry, rot) => {
-      ctx.fillStyle = '#111111';
-      const cs = Math.cos(rot), sn = Math.sin(rot);
-      const R = Math.ceil(Math.max(rx, ry));
-      for (let yy = -R; yy <= R; yy++) for (let xx = -R; xx <= R; xx++) {
-        const u = (xx * cs + yy * sn) / rx, v = (-xx * sn + yy * cs) / ry;
-        if (u * u + v * v <= 1) ctx.fillRect(Math.round(cx + bx * r + xx), Math.round(cy + by * r + yy), 1, 1);
-      }
-    };
-    if (small) { blob(-0.42, 0, 0.12 * r, 0.26 * r, 0); blob(0.2, -0.35, 0.26 * r, 0.14 * r, 0.5); blob(0.2, 0.35, 0.26 * r, 0.14 * r, -0.5); return; }
-    // big moon: cache blobs to an offscreen canvas for speed
+    // the official Decibel mark (vector paths -> crisp pixel grid), dark on the yellow moon
     const key = 'm' + r;
-    if (!bgCache[key]) {
-      const c = document.createElement('canvas'); c.width = c.height = r * 2 + 2; const g = c.getContext('2d'); g.fillStyle = '#111';
-      const B = (bx, by, rx, ry, rot) => { const cs = Math.cos(rot), sn = Math.sin(rot), R = Math.ceil(Math.max(rx, ry)); for (let yy = -R; yy <= R; yy++) for (let xx = -R; xx <= R; xx++) { const u = (xx * cs + yy * sn) / rx, v = (-xx * sn + yy * cs) / ry; const wob = 1 + 0.12 * Math.sin(xx * 0.7 + yy * 0.5); if (u * u + v * v <= wob) g.fillRect(Math.round(r + bx * r + xx), Math.round(r + by * r + yy), 1, 1); } };
-      B(-0.42, 0.02, 0.13 * r, 0.27 * r, 0.05); B(0.2, -0.36, 0.27 * r, 0.14 * r, 0.5); B(0.22, 0.36, 0.27 * r, 0.14 * r, -0.5);
-      bgCache[key] = c;
-    }
-    ctx.drawImage(bgCache[key], cx - r, cy - r);
+    if (!bgCache[key]) bgCache[key] = BG.mark(Math.round(r * 1.12), '#111111'); // 48-px trace at an integer scale
+    const m = bgCache[key];
+    ctx.drawImage(m, cx - Math.round(m.width / 2) + Math.round(r * 0.05), cy - Math.round(m.height / 2));
   }
 
   // ---------- draw world ----------
@@ -927,85 +920,174 @@
     ctx.globalAlpha = 1;
   }
   function easeBounce(t) { const n = 7.5625, d = 2.75; if (t < 1 / d) return n * t * t; if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75; if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375; return n * (t -= 2.625 / d) * t + 0.984375; }
+  // --- Decibel lockup (official mark in its yellow app-icon square + pixel wordmark), cached ---
+  let lockup = null;
+  function getLockup() {
+    if (lockup) return lockup;
+    const icon = BG.icon(54, '#fff600', '#bdb400', '#111111');
+    const word = makeSprite(D.LOGO.word.map(r => r.replace(/#/g, 'w')), { w: '#ececec' });
+    const wordSh = makeSprite(D.LOGO.word.map(r => r.replace(/#/g, 'w')), { w: '#1a1030' });
+    const gap = 6, w = icon.width + gap + word.width + 1, h = icon.height;
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    g.drawImage(icon, 0, 0);
+    const wy = Math.round(h / 2 - word.height / 2);
+    g.drawImage(wordSh, icon.width + gap + 1, wy + 1); g.drawImage(word, icon.width + gap, wy);
+    return (lockup = { c, h, icon, word, wordSh });
+  }
+  function drawLockup(cx, y, T) {
+    const L = getLockup();
+    if (T < 0.08) return;
+    ctx.drawImage(L.c, Math.round(cx - L.c.width / 2), Math.round(y));
+  }
+  function drawSpeaker(x, y, on, T) {
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y + 2, 2, 3); ctx.fillRect(x + 2, y + 1, 1, 5); ctx.fillRect(x + 3, y, 1, 7);
+    const k = Math.floor(T * 3) % 3;
+    if (on) { if (k >= 0) ctx.fillRect(x + 5, y + 2, 1, 3); if (k >= 1) ctx.fillRect(x + 7, y + 1, 1, 5); if (k >= 2) ctx.fillRect(x + 9, y, 1, 7); }
+  }
+  function drawGate() {
+    const T = stateT;
+    ctx.fillStyle = 'rgba(8,4,18,0.55)'; ctx.fillRect(0, 0, W, H);
+    const csc = 2, ch = 46 * csc, cy = Math.round(H / 2 - ch / 2 - 10);
+    const sh = Math.round(Math.sin(T * 3) * 1.5);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(Math.round(W / 2 - 30), cy + ch - 2, 60, 3);
+    drawSpr(Math.floor(T * 1.6) % 2 ? S.cat.idle2 : S.cat.idle, Math.round(W / 2 - 19 * csc), cy + sh * 0, false, csc);
+    const big = textW('TAP TO START', 2, true) <= W - 10 ? 2 : 1;
+    if (Math.floor(T * 2.2) % 2 === 0) text('TAP TO START', W / 2, cy + ch + 10, '#FFE500', { align: 'center', scale: big, bold: true, shadow: '#5a2a8a' });
+    const hint = 'SOUND ON', hw = textW(hint) + 14, hx = Math.round(W / 2 - hw / 2), hy = cy + ch + 10 + 7 * big + 12;
+    drawSpeaker(hx, hy, true, T); text(hint, hx + 14, hy, '#bdb3e6');
+  }
   function drawTitle() {
     const T = DBG.poster ? 99 : stateT;
+    ctx.fillStyle = 'rgba(8,4,18,0.38)'; ctx.fillRect(0, 0, W, H); // calm the busy city behind the title
     const word = 'DECICAT', sc = W >= 300 && H >= 300 ? 4 : 3, adv = 7 * sc;
     const tw = word.length * adv - sc, x0 = Math.round(W / 2 - tw / 2);
-    const ty = Math.round(playTop + Math.max(26, playH * 0.13));
+    const gy = baseY - 34, csc = 2, catTop = gy - 46 * csc;
+    const L = getLockup(), LH = L.h, wordH = L.word.height;
+    // stacked: lockup / DECICAT / subtitle / name row; side-by-side (icon left, wordmark + DECICAT + subtitle right) when short
+    const tail = 9 + 15 + 4 + 7, stackH = LH + 6 + 8 * sc + 6 + 7 + tail;
+    const colH = wordH + 4 + 8 * sc + 3 + 5 + 7, sideW = L.icon.width + 8 + tw;
+    const side = catTop - 4 - stackH < 8 && sideW <= W - 8;
+    const blockH = side ? Math.max(LH, colH) + tail : stackH;
+    const y0 = Math.max(4, Math.round((catTop - 4 - blockH) / 2));
+    let ty, tx0 = x0, subX, subY;
+    if (side) {
+      const gx = Math.round(W / 2 - sideW / 2), cx = gx + L.icon.width + 8, top = y0 + Math.max(0, Math.round((LH - colH) / 2));
+      if (T >= 0.08) {
+        ctx.drawImage(L.icon, gx, y0 + Math.max(0, Math.round((colH - LH) / 2)));
+        ctx.drawImage(L.wordSh, cx + 1, top + 1); ctx.drawImage(L.word, cx, top);
+      }
+      ty = top + wordH + 4; tx0 = cx; subX = cx; subY = ty + 8 * sc + 3 + 5;
+    } else {
+      drawLockup(W / 2, y0, T);
+      ty = y0 + LH + 6; subY = ty + 8 * sc + 6; subX = null;
+    }
     for (let i = 0; i < word.length; i++) {
       const lt = clamp((T - 0.15 - i * 0.13) / 0.55, 0, 1); if (lt <= 0) continue;
       const y = Math.round(-30 + (ty + 30) * easeBounce(lt));
-      text(word[i], x0 + i * adv, y, i === 4 || i === 5 ? '#ffffff' : '#FFE500', { scale: sc, bold: true, shadow: '#8a2fb8', sx: 0, sy: sc });
+      text(word[i], tx0 + i * adv, y, i === 4 || i === 5 ? '#ffffff' : '#FFE500', { scale: sc, bold: true, shadow: '#8a2fb8', sx: 0, sy: sc });
     }
-    const subY = ty + 7 * sc + 10;
+    const sub = 'A DECIBEL ADVENTURE';
     if (T > 1.2) {
       const n = DBG.poster ? 99 : Math.floor((T - 1.2) * 30);
-      text('A DECIBEL ADVENTURE'.slice(0, n), W / 2 - textW('A DECIBEL ADVENTURE') / 2, subY, '#d9d0ff', { shadow: '#2a1d4a' });
+      text(sub.slice(0, n), subX !== null ? subX : Math.round(W / 2 - textW(sub) / 2), subY, '#d9d0ff', { shadow: '#2a1d4a' });
     }
-    // ground line + cat
-    const gy = baseY - 30;
+    // ground + cat
     ctx.fillStyle = '#5b4596'; ctx.fillRect(0, gy, W, 1);
     ctx.fillStyle = '#1a1030'; ctx.fillRect(0, gy + 1, W, H - gy - 1);
-    const csc = 2;
-    drawSpr((Math.floor(T * 1.6) % 2 && !DBG.poster) ? S.cat.idle2 : S.cat.idle, Math.round(W / 2 - 19 * csc), gy - 46 * csc, false, csc);
-    if (DBG.poster) { text('HOW LONG CAN YOU LAST?', W / 2, subY + 22, '#FFE500', { align: 'center', shadow: '#2a1d4a' }); text('TAP TO PLAY', W / 2, gy + 9, '#ffffff', { align: 'center', bold: true, shadow: '#2a1d4a' }); text('ART & IDEA BY @DONCASTRO', W / 2, H - 10, '#9a8ccc', { align: 'center' }); return; }
+    drawSpr((Math.floor(T * 1.6) % 2 && !DBG.poster) ? S.cat.idle2 : S.cat.idle, Math.round(W / 2 - 19 * csc), catTop, false, csc);
+    const credits = () => {
+      text('ART & IDEA BY @DONCASTRO', W / 2, H - 19, '#b4a8e0', { align: 'center' });
+      text('GAME BY @ANGELATAPTOS', W / 2, H - 10, '#8f84c4', { align: 'center' });
+    };
+    if (DBG.poster) { text('HOW LONG CAN YOU LAST?', W / 2, subY + 16, '#FFE500', { align: 'center', shadow: '#2a1d4a' }); text('TAP TO PLAY', W / 2, gy + 5, '#ffffff', { align: 'center', bold: true, shadow: '#2a1d4a' }); credits(); return; }
     if (T > 1.6) {
-      // name pill
-      const nm = 'PLAYER: ' + playerName().toUpperCase();
-      const nw = textW(nm) + 26, nx = Math.round(W / 2 - nw / 2), ny = subY + 16;
-      UI.name = { x: nx - 2, y: ny - 4, w: nw + 4, h: 17 };
-      ctx.fillStyle = '#1a1030'; ctx.fillRect(nx, ny - 2, nw, 13);
-      ctx.fillStyle = '#6b55b0'; ctx.fillRect(nx, ny - 2, nw, 1); ctx.fillRect(nx, ny + 10, nw, 1); ctx.fillRect(nx, ny - 2, 1, 13); ctx.fillRect(nx + nw - 1, ny - 2, 1, 13);
-      text(nm, nx + 4, ny + 1, '#ffffff');
-      // pencil icon
-      const px = nx + nw - 13, py = ny + 1; ctx.fillStyle = '#FFE500'; for (let i = 0; i < 6; i++) ctx.fillRect(px + i, py + 6 - i, 2, 1); ctx.fillStyle = '#ff9ab0'; ctx.fillRect(px + 6, py, 2, 1);
-      if (best > 0) text('BEST ' + pad6(best), W / 2, ny + 16, '#a8e6a1', { align: 'center' });
-      if (Math.floor(T * 2.2) % 2 === 0) text('TAP TO START', W / 2, gy + 9, '#ffffff', { align: 'center', bold: true, shadow: '#2a1d4a' });
+      // name row: current name + EDIT NAME button (both open the editor)
+      const custom = !!sanitizeName(LS.get('decicat_name'));
+      const nm = 'NAME: ' + playerName().toUpperCase(), btn = 'EDIT NAME';
+      const pw = textW(nm) + 8, bw = textW(btn, 1, true) + 10, tot = pw + 4 + bw;
+      const nx = Math.round(W / 2 - tot / 2), ny = subY + 7 + 9, bx = nx + pw + 4;
+      UI.name = { x: nx - 2, y: ny - 3, w: tot + 4, h: 21 };
+      ctx.fillStyle = '#140c28'; ctx.fillRect(nx, ny, pw, 15);
+      ctx.fillStyle = '#6b55b0'; ctx.fillRect(nx, ny, pw, 1); ctx.fillRect(nx, ny + 14, pw, 1); ctx.fillRect(nx, ny, 1, 15); ctx.fillRect(nx + pw - 1, ny, 1, 15);
+      text('NAME:', nx + 4, ny + 4, '#9a8ccc'); text(playerName().toUpperCase(), nx + 4 + 36, ny + 4, custom ? '#FFE500' : '#ffffff');
+      const pulse = Math.floor(T * 2) % 2 === 0;
+      ctx.fillStyle = '#5a3a00'; ctx.fillRect(bx, ny, bw, 15); ctx.fillStyle = pulse ? '#FFE500' : '#f0d040'; ctx.fillRect(bx + 1, ny + 1, bw - 2, 13);
+      ctx.fillStyle = '#FFF3A0'; ctx.fillRect(bx + 1, ny + 1, bw - 2, 1);
+      text(btn, bx + 5, ny + 4, '#2a1a00', { bold: true });
+      const note = custom ? (best > 0 ? 'YOUR BEST ' + pad6(best) : 'READY WHEN YOU ARE') : 'OR JUST TAP TO PLAY ANONYMOUS';
+      text(note, W / 2, ny + 19, custom ? '#a8e6a1' : '#9a8ccc', { align: 'center' });
+      if (best > 0 && !custom) text('BEST ' + pad6(best), 4, 4, '#a8e6a1', { shadow: '#140b26' });
+      if (Math.floor(T * 2.2) % 2 === 0) text('TAP TO START', W / 2, gy + 5, '#ffffff', { align: 'center', bold: true, shadow: '#2a1d4a' });
     }
-    text('ART & IDEA BY @DONCASTRO', W / 2, H - 10, '#9a8ccc', { align: 'center' });
+    credits();
   }
   function drawOver() {
-    ctx.fillStyle = 'rgba(8,4,18,0.82)'; ctx.fillRect(0, 0, W, H);
-    const top = Math.max(0, Math.round((H - 240) / 2));
-    let y = top + 8;
+    ctx.fillStyle = 'rgba(8,4,18,0.84)'; ctx.fillRect(0, 0, W, H);
+    const roomy = H >= 300, pitch = roomy ? 10 : 8;
+    const total = roomy ? 18 + 10 + 10 + 11 + TOPN * pitch + 5 + 17 + 34 : 16 + 9 + 9 + 10 + TOPN * pitch + 4 + 16 + 3 + 7;
+    const top = Math.max(0, Math.round((H - total) / 2));
+    let y = top + (roomy ? 2 : 1);
     const lsc = textW('LIQUIDATED', 2, true) <= W - 8 ? 2 : 1;
     text('LIQUIDATED', W / 2, y, '#ff5a4a', { align: 'center', scale: lsc, bold: true, shadow: '#3a0a0a' });
-    y += 20;
+    y += roomy ? 18 : 16;
     if (!result) return;
     text('SCORE ' + pad6(result.score) + (result.isBest ? '  NEW BEST!' : ''), W / 2, y, result.isBest ? '#FFE500' : '#ffffff', { align: 'center' });
-    y += 11;
-    let msg = result.pending ? 'SAVING...' : result.rank > 0 ? 'YOU PLACED #' + result.rank + '!' : 'NOT TOP 10 - BEST: ' + pad6(result.best);
-    text(msg, W / 2, y, result.rank > 0 ? '#a8e6a1' : '#d9d0ff', { align: 'center' });
-    if (Scores.offline) text('(OFFLINE - SAVED ON THIS DEVICE)', W / 2, y + 8, '#7d70b0', { align: 'center' }), y += 4;
-    y += 13;
-    // table
+    y += roomy ? 10 : 9;
+    const R = result, st = R.status;
+    let msg, mc = '#d9d0ff', sub = '- TOP ' + TOPN + ' -', scol = '#FFE500';
+    if (R.pending) msg = 'SAVING...';
+    else if (st === 'queued') { msg = "COULDN'T REACH THE LEADERBOARD"; mc = '#ffb070'; sub = 'WILL RETRY - TAP HERE TO RETRY NOW'; scol = '#bdb3e6'; }
+    else if (st === 'rejected') { msg = 'SCORE NOT ACCEPTED'; mc = '#ff8a7a'; }
+    else if (!R.ranked) msg = 'RUN TOO SHORT TO RANK';
+    else if (R.rank > 0) { msg = 'YOU PLACED #' + R.rank + (R.total > TOPN ? ' OF ' + R.total : '') + '!'; mc = '#a8e6a1'; }
+    else msg = 'NOT IN THE TOP ' + TOPN + ' - BEST ' + pad6(R.best);
+    if (textW(msg) > W - 4) msg = msg.replace(' OF ' + R.total, '');
+    if (st === 'local') sub = '- TOP ' + TOPN + ' (THIS DEVICE) -';
+    text(msg, W / 2, y, mc, { align: 'center' });
+    y += roomy ? 10 : 9;
+    text(sub, W / 2, y, scol, { align: 'center' });
+    const rowW0 = 27 * 6;
+    UI.retry = { x: Math.round(W / 2 - rowW0 / 2) - 4, y: y - 3, w: rowW0 + 8, h: 14 + TOPN * pitch };
+    y += roomy ? 11 : 10;
     const rowW = 27 * 6, tx = Math.round(W / 2 - rowW / 2);
-    text('- TOP 10 -', W / 2, y, '#FFE500', { align: 'center' }); y += 10;
-    for (let i = 0; i < 10; i++) {
-      const e = result.top[i];
-      const mine = e && result.id && e.id === result.id;
-      if (mine) { ctx.fillStyle = (Math.floor(bgT * 3) % 2) ? '#6b4b00' : '#553c00'; ctx.fillRect(tx - 3, y - 1, rowW + 6, 9); }
+    const empty = !R.top || !R.top.length;
+    if (empty && (R.pending || R.board === 'loading' || R.board === 'error')) {
+      const my = y + Math.round(TOPN * pitch / 2) - 8;
+      if (R.board === 'error' && !R.pending) {
+        const bw2 = 84, bx2 = Math.round(W / 2 - bw2 / 2);
+        text("LEADERBOARD DIDN'T LOAD", W / 2, my - 12, '#bdb3e6', { align: 'center' });
+        ctx.fillStyle = '#2a1d4a'; ctx.fillRect(bx2 - 1, my - 1, bw2 + 2, 17); ctx.fillStyle = '#3a2d63'; ctx.fillRect(bx2, my, bw2, 15);
+        text('TAP TO RETRY', W / 2, my + 4, '#FFE500', { align: 'center' });
+      } else if (Math.floor(bgT * 3) % 3 !== 2) text('LOADING...', W / 2, my + 4, '#bdb3e6', { align: 'center' });
+      y += TOPN * pitch;
+    } else for (let i = 0; i < TOPN; i++) {
+      const e = result.top[i], mine = e && result.id && e.id === result.id;
+      if (mine) { ctx.fillStyle = (Math.floor(bgT * 3) % 2) ? '#6b4b00' : '#553c00'; ctx.fillRect(tx - 3, y - 1, rowW + 6, pitch); }
+      else if (i % 2 === 0) { ctx.fillStyle = 'rgba(120,100,200,0.10)'; ctx.fillRect(tx - 3, y - 1, rowW + 6, pitch); }
       const col = mine ? '#FFE500' : (i < 3 ? '#ffffff' : '#bdb3e6');
-      const rank = String(i + 1).padStart(2, ' ') + '.';
-      text(rank, tx, y, col);
+      text(String(i + 1).padStart(2, ' ') + '.', tx, y, col);
       text(e ? String(e.name).toUpperCase().slice(0, 16) : '---', tx + 21, y, e ? col : '#5b4f8a');
-      text(e ? pad6(e.score) : '', tx + rowW, y, col, { align: 'right' });
-      y += 9;
+      if (e) text(pad6(e.score), tx + rowW, y, col, { align: 'right' });
+      if (mine) { ctx.fillStyle = '#FFE500'; const ax = tx - 7, ay = y + 1; ctx.fillRect(ax, ay, 1, 5); ctx.fillRect(ax + 1, ay + 1, 1, 3); ctx.fillRect(ax + 2, ay + 2, 1, 1); }
+      y += pitch;
     }
-    y += 6;
-    // buttons
-    const bw = 96, bx = Math.round(W / 2 - bw / 2);
-    UI.again = { x: bx - 4, y: y - 4, w: bw + 8, h: 24 };
+    y += roomy ? 5 : 4;
+    // buttons side by side
+    const bw = 92, mw = 52, gap = 8, bx = Math.round(W / 2 - (bw + gap + mw) / 2), mx = bx + bw + gap;
+    UI.again = { x: bx - 3, y: y - 3, w: bw + 6, h: 22 };
+    UI.menu = { x: mx - 3, y: y - 3, w: mw + 6, h: 22 };
     const blink = stateT > 0.7;
-    ctx.fillStyle = '#5a3a00'; ctx.fillRect(bx - 1, y - 1, bw + 2, 18);
-    ctx.fillStyle = blink ? '#FFE500' : '#8a7a30'; ctx.fillRect(bx, y, bw, 16);
+    ctx.fillStyle = '#5a3a00'; ctx.fillRect(bx - 1, y - 1, bw + 2, 17);
+    ctx.fillStyle = blink ? '#FFE500' : '#8a7a30'; ctx.fillRect(bx, y, bw, 15);
     ctx.fillStyle = '#FFF3A0'; ctx.fillRect(bx, y, bw, 1);
-    text('PLAY AGAIN', W / 2, y + 5, '#2a1a00', { align: 'center', bold: true });
-    y += 21;
-    UI.menu = { x: W / 2 - 24, y: y - 3, w: 48, h: 13 };
-    text('MENU', W / 2, y, '#9a8ccc', { align: 'center' });
-    if (H - y > 30) { text('TRADE LOUD ON DECIBEL', W / 2, y + 14, '#FFE500', { align: 'center' }); }
-    text('DECICAT ART & IDEA BY @DONCASTRO', W / 2, Math.min(H - 9, top + 232), '#7d70b0', { align: 'center' });
+    text('PLAY AGAIN', bx + Math.round(bw / 2), y + 4, '#2a1a00', { align: 'center', bold: true });
+    ctx.fillStyle = '#2a1d4a'; ctx.fillRect(mx - 1, y - 1, mw + 2, 17); ctx.fillStyle = '#3a2d63'; ctx.fillRect(mx, y, mw, 15);
+    text('MENU', mx + Math.round(mw / 2), y + 4, '#d9d0ff', { align: 'center', bold: true });
+    y += 17;
+    if (roomy) {
+      text('TRADE LOUD ON DECIBEL.TRADE', W / 2, y + 8, '#FFE500', { align: 'center' });
+      text('DECICAT ART & IDEA BY @DONCASTRO', W / 2, y + 20, '#7d70b0', { align: 'center' });
+    } else text('TRADE LOUD ON DECIBEL.TRADE', W / 2, y + 2, '#FFE500', { align: 'center' });
   }
   function drawPause() {
     ctx.fillStyle = 'rgba(8,4,18,0.7)'; ctx.fillRect(0, 0, W, H);
@@ -1018,6 +1100,7 @@
     const sh = shake > 0 ? Math.round(rand(-2, 2) * shake * 6) : 0;
     ctx.translate(sh, Math.round(sh * 0.5));
     drawBackground();
+    if (state === 'gate') { drawGate(); return; }
     if (state === 'title') { drawTitle(); if (!DBG.poster) drawToggles(); return; }
     drawWorld();
     if (state === 'play' || state === 'dying') { drawBanner(); drawHUD(); }
@@ -1039,10 +1122,10 @@
 
   // test / debug hooks
   window.__decicat = {
-    get rec() { return REC; }, get stats() { return { dist: Math.floor(dist / 2), bonus, coinsN, runT: +runT.toFixed(1) }; }, get state() { return state; }, get paused() { return paused; }, get score() { return score(); }, get zone() { return zone; }, get boost() { return cat.boost; },
+    get rec() { return REC; }, get stats() { return { dist: Math.floor(dist / 2), bonus, coinsN, runT: +runT.toFixed(1) }; }, get state() { return state; }, get stateT() { return stateT; }, get paused() { return paused; }, get score() { return score(); }, get zone() { return zone; }, get boost() { return cat.boost; },
     get result() { return result; }, get death() { return lastDeath; }, get size() { return [W, H, SCALE]; },
     advance(n, dt) { dt = dt || 1 / 60; for (let i = 0; i < n; i++) update(dt); render(); },
-    press: (x, y) => press(x, y), release, start: startGame, boost: startBoost,
+    press: (x, y) => press(x, y), release, start: startGame, boost: startBoost, leaveGate,
     get ui() { return UI; }, get audio() { const A = D.Audio; return A && { ctx: A.ctx ? A.ctx.state : null, song: A.cur ? A.cur.name : null, music: A.musicOn, sfx: A.sfxOn }; },
     kill: () => die('test'), Scores, LocalScores, RemoteScores, sanitizeName
   };

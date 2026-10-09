@@ -261,6 +261,16 @@
       E.timer = setInterval(() => E.pump(E.ctx.currentTime + 0.25), 40);
     } catch (e) { E.ctx = null; }
   };
+  // 0.5 s of 8-bit silence at 8 kHz as a data: URI (built once)
+  let _silent = null;
+  function silentWavURI() {
+    if (_silent) return _silent;
+    const n = 4000, buf = new Uint8Array(44 + n), dv = new DataView(buf.buffer), W = (o, t) => { for (let i = 0; i < t.length; i++) buf[o + i] = t.charCodeAt(i); };
+    W(0, 'RIFF'); dv.setUint32(4, 36 + n, true); W(8, 'WAVE'); W(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+    dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true); W(36, 'data'); dv.setUint32(40, n, true);
+    buf.fill(128, 44); let s = ''; for (let i = 0; i < buf.length; i++) s += String.fromCharCode(buf[i]);
+    return (_silent = 'data:audio/wav;base64,' + btoa(s));
+  }
   E.unlock = function () {
     if (E.offline) return;
     if (!E.ctx) E.init();
@@ -269,7 +279,7 @@
       try {
         // tiny silent WAV played through an <audio> tag: lets iOS route Web Audio even with the ringer switch on silent
         const a = document.createElement('audio'); a.setAttribute('playsinline', ''); a.loop = true; a.volume = 0.01;
-        a.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=';
+        a.src = silentWavURI(); // NOTE: must contain real samples; a looping zero-length WAV makes Chrome spin and freeze the page
         const pr = a.play(); if (pr && pr.catch) pr.catch(() => { }); E._tag = a;
       } catch (e) { E._tag = true; }
     }

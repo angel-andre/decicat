@@ -1,15 +1,23 @@
-# DECICAT worker. To deploy later:
-#   npx wrangler kv namespace create SCORES   (paste the id below)
-#   npx wrangler deploy
+# DECICAT worker. Deploy:  npx wrangler deploy   (from this folder, after `node ../build.mjs`)
 name = "decicat"
 main = "worker.js"
 # account_id = "<YOUR_CLOUDFLARE_ACCOUNT_ID>"   # or set CLOUDFLARE_ACCOUNT_ID in the environment
 compatibility_date = "2026-09-01"
 workers_dev = true
 
+# legacy KV (v1/v2 scores) - only read once by the Durable Object to import old entries
 [[kv_namespaces]]
 binding = "SCORES"
 id = "<YOUR_KV_NAMESPACE_ID>"
+
+# all scores: one SQLite-backed Durable Object instance
+[[durable_objects.bindings]]
+name = "LB"
+class_name = "Leaderboard"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Leaderboard"]
 
 [[rules]]
 type = "Text"
