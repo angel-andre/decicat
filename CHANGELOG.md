@@ -2,6 +2,11 @@
 
 All dates are 2026, Eastern Time. Version numbers match the git tags and GitHub releases.
 
+## v5.3 (Oct 9, ~07:10)
+- Game feel: coyote time and jump buffer, faster fall with a short hang at the apex (same max height), squash and stretch, landing dust, coin pops, power-up flash, screen shake and hit-stop on stomps and death (reduced-motion aware).
+- Replays carry their version; v5.2 replays still verify with v5.2 physics.
+- X card image refreshed (new paw, no trailing period) with a cache-busting link.
+
 ## v5.2 (Oct 9, ~06:45)
 - Title: the final T in DECICAT is now white, so CAT matches. Credit line reads "Original Decicat concept by @doncastro" (no trailing period).
 - Tap-to-start screen: pixel Decibel-logo moon in the top-right corner.

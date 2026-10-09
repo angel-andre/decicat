@@ -34,13 +34,15 @@ async function sim(rp) {
     await page.goto('file://' + GAME + '?nogate'); await page.waitForFunction(() => window.__decicat && __decicat.simulate);
   }
   const ver = await page.evaluate(() => __decicat.version);
+  // v5.3+ builds carry versioned physics: a replay is re-simulated with the jump physics of the version that recorded it (v5.2 and v5.3 tables)
+  const physics = await page.evaluate(v => __decicat.physFor ? __decicat.physFor(v) : null, rp.v);
   const t0 = Date.now(), out = await page.evaluate(r => __decicat.simulate(r), rp);
-  return Object.assign(out, { simVersion: ver, ms: Date.now() - t0 });
+  return Object.assign(out, { simVersion: ver, physics, ms: Date.now() - t0 });
 }
 function report(e, out) {
   const okScore = out.score === e.score, okFrames = !e.replay || !e.replay.f || out.frames === e.replay.f;
   console.log(`  claimed   ${e.score}   run ${(e.runMs / 1000).toFixed(1)} s`);
-  console.log(`  computed  ${out.score}   run ${(out.runMs / 1000).toFixed(1)} s, ${out.frames} frames, reached zone ${out.zone}${out.reachedMoon ? ' (REACHED THE MOON)' : ''}, death: ${out.death}  (sim ${out.ms} ms, game ${out.simVersion}${e.replay && e.replay.v && e.replay.v !== out.simVersion ? ' != replay ' + e.replay.v + ' - VERSION MISMATCH' : ''})`);
+  console.log(`  computed  ${out.score}   run ${(out.runMs / 1000).toFixed(1)} s, ${out.frames} frames, reached zone ${out.zone}${out.reachedMoon ? ' (REACHED THE MOON)' : ''}, death: ${out.death}  (sim ${out.ms} ms, game ${out.simVersion}${e.replay && e.replay.v && e.replay.v !== out.simVersion ? (out.physics ? ', replay ' + e.replay.v + ' re-simulated with ' + out.physics + ' physics' : ' != replay ' + e.replay.v + ' - VERSION MISMATCH') : ''})`);
   if (e.replay && e.replay.dbg) console.log('  NOTE: recorded with debug flags (bot/god/zt/seed) - not a real run');
   const verdict = okScore && okFrames ? 'VERIFIED' : 'MISMATCH';
   console.log(`  reachedMoon (from replay): ${!!out.reachedMoon}${e.moon !== undefined ? '   client claim: ' + !!e.moon : ''}`);

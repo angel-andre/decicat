@@ -35,7 +35,7 @@
   })() : null;
 
   // ---------- utils ----------
-  const VERSION = 'v5.2';
+  const VERSION = 'v5.3';
   const cryptoSeed = () => (window.crypto && crypto.getRandomValues) ? (crypto.getRandomValues(new Uint32Array(1))[0] | 0) || 1 : ((Math.random() * 2147483647) | 0) || 1;
   let seed = DBG.seed || cryptoSeed();
   function rnd() { seed = (seed + 0x6D2B79F5) | 0; let t = seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
@@ -328,6 +328,13 @@
 
   // ---------- physics constants ----------
   const GRAV = 1000, JUMP = 390, DJUMP = 340, MAXFALL = 560, BOOST_T = 4.0, BOOST_MUL = 1.9;
+  // v5.3 jump feel. Versioned: a replay is re-simulated with the physics of the version that recorded it.
+  //  coy: coyote time after walking off a ledge (s) | buf: jump buffer before landing (s)
+  //  fallMul: gravity multiplier while falling | apexV/apexMul: lighter gravity while |vy| < apexV (hang at the top)
+  // (fall 1.18x + apex hang 0.6x keep the air time of a full jump within ~2% of v5.2, so gap reach / max height are unchanged)
+  const PHYS = { v52: { coy: 0.1, buf: 0.12, fallMul: 1, apexV: 0, apexMul: 1 }, v53: { coy: 0.08, buf: 0.10, fallMul: 1.18, apexV: 35, apexMul: 0.6 } };
+  const physFor = v => { const m = /^v(\d+)\.(\d+)/.exec(String(v || '')); return m && (+m[1] < 5 || (+m[1] === 5 && +m[2] < 3)) ? PHYS.v52 : PHYS.v53; };
+  let PH = PHYS.v53;
   let ZONE_T = Q.has('zt') ? Math.max(3, +Q.get('zt') || ZONE_SECONDS) : ZONE_SECONDS;
 
   // ---------- state ----------
@@ -388,12 +395,12 @@
     replaying = { evs: decodeEv(rp.ev), ri: 0, rs: (rp.rs || []).slice().sort((a, b) => a[0] - b[0]), rsi: 0 };
     applyLogical(rp.w, rp.h);
     state = 'play'; stateT = 0; paused = false; pressing = false; runRec = null;
-    resetRun(rp.seed, rp.z0 || 1);
+    resetRun(rp.seed, rp.z0 || 1); PH = physFor(rp.v);
     let guard = 0; const max = 60 * 60 * 120;
     // the rocket ending + YOU MADE IT screen freeze the sim (no inputs are read), so a re-sim jumps straight into Moon Mode
     while ((state === 'play' || state === 'ending' || state === 'moonwin') && guard++ < max) { if (state !== 'play') { startMoonMode(); continue; } update(FIX); }
     const out = { score: score(), frames: simFrame, dist: Math.floor(dist / 2), bonus, coins: coinsN, zone, death: lastDeath, runMs: Math.round(runT * 1000), reachedMoon };
-    replaying = null; MUTE = false; ZONE_T = prevZT; DBG.god = prevGod; DBG.boost = prevBoost; state = prevSt === 'play' ? 'title' : prevSt; resize();
+    replaying = null; MUTE = false; PH = PHYS.v53; vfx.length = 0; ZONE_T = prevZT; DBG.god = prevGod; DBG.boost = prevBoost; state = prevSt === 'play' ? 'title' : prevSt; resize();
     return out;
   }
 
@@ -602,7 +609,7 @@
   function startGame() {
     Snd.init();
     state = 'play'; stateT = 0; paused = false; pressing = false;
-    resetRun();
+    resetRun(); PH = PHYS.v53; vfx.length = 0; vis.sx = vis.sy = 1; hitStop = 0;
     firstHint = !DBG.bot && !DBG.poster && !LS.get(HINTKEY); if (firstHint) LS.set(HINTKEY, '1');
     runRec = { seed: runSeed, w: W, h: H, z0: zone, ev: [], lastF: 0, rs: [], dbg: (DBG.bot || DBG.god || DBG.boost || DBG.seed || DBG.zone !== 1 || ZONE_T !== ZONE_SECONDS) ? 1 : 0 };
     playZoneMusic('bar'); setRain(zoneRain(zone));
@@ -625,7 +632,7 @@
     if (RS && !DBG.god) RS.hits++;
     if (DBG.god) { if (why === 'fell') { cat.y = boostY() + 40; cat.vy = 0; cat.inv = 1; } return; }
     lastReplay = packReplay(); runRec = null;
-    cat.dead = true; cat.vy = why === 'fell' ? -120 : -260; cat.g = false; state = 'dying'; stateT = 0; shake = 0.35; lev = 1;
+    cat.dead = true; cat.vy = why === 'fell' ? -120 : -260; cat.g = false; state = 'dying'; stateT = 0; shake = 0.35; lev = 1; juiceHit(0.08, 0, cat.x, cat.y - 22, 1);
     Snd.stop(0.15); Snd.sfx('death'); Snd.amb('rocket', 0); setRain(0);
     for (let i = 0; i < 18; i++) parts.push({ x: cat.x, y: cat.y - 22, vx: rand(-90, 90), vy: rand(-140, 20), l: rand(0.4, 0.9), c: ['#FFCC00', '#ffffff', '#D9584E'][i % 3], s: 2 });
   }
@@ -702,9 +709,9 @@
     if (cat.dead || cat.boost > 0) return;
     if (cat.g || cat.coy > 0) { doJump(JUMP); Snd.sfx('jump'); }
     else if (cat.air > 0) { cat.air--; doJump(DJUMP); Snd.sfx('djump'); for (let i = 0; i < 6; i++) parts.push({ x: cat.x + rand(-6, 6), y: cat.y, vx: rand(-30, 30), vy: rand(10, 50) * grav, l: 0.3, c: '#d8ccff', s: 1 }); }
-    else cat.buf = 0.12;
+    else cat.buf = PH.buf;
   }
-  function doJump(v) { if (RS && !RS.jumps++) ach('hop'); cat.vy = -v * (inU ? 1 : grav); cat.g = false; cat.coy = 0; cat.holdT = 0; cat.rising = true; cat.buf = 0; }
+  function doJump(v) { juiceJump(v); if (RS && !RS.jumps++) ach('hop'); cat.vy = -v * (inU ? 1 : grav); cat.g = false; cat.coy = 0; cat.holdT = 0; cat.rising = true; cat.buf = 0; }
   function jumpRelease() { if (cat.rising && cat.vy * (inU ? 1 : grav) < -120 && cat.holdT > 0.07) cat.vy *= 0.5; cat.rising = false; }
 
   // Audio unlock: iOS/Safari only treats touchend / pointerup / click / keydown as user activation (not touchstart / touch pointerdown)
@@ -764,7 +771,7 @@
 
   // ---------- update ----------
   function update(dt) {
-    gameClock += dt;
+    gameClock += dt; updJuice(dt);
     stateT += dt;
     if (state === 'title' || state === 'over' || state === 'gate' || state === 'ach') { animBg(dt); updParts(dt); return; }
     if (paused) return;
@@ -914,7 +921,7 @@
     else cat.y = grav > 0 ? baseY + 40 : playTop - 40;
   }
   function pickItem(q) {
-    q.taken = true; const P = PW[q.k]; bonus += 250; Snd.sfx('pw_' + q.k);
+    q.taken = true; const P = PW[q.k]; bonus += 250; Snd.sfx('pw_' + q.k); juiceFlash(P.col);
     if (RS) { RS.pws[q.k] = 1; RS.stagePw++; if (Object.keys(RS.pws).length >= 4) ach('collector'); }
     if (q.k === 'shield') shieldOn = true; else pwT[q.k] = P.dur;
     banner = { big: P.name + '!', small: q.k === 'shield' ? 'BLOCKS ONE HIT' : q.k === 'mag' ? 'PULLS IN COINS' : q.k === 'slow' ? 'SLOW-MO 0.6X' : 'INVINCIBLE', t: 0, dur: 1.4 };
@@ -949,6 +956,8 @@
       if (!cat.g) {
         let g = GRAV * (ztype(zone) === 12 ? 0.78 : 1); // Moon Mode: low gravity
         if (cat.rising && pressing && cat.vy < 0) g *= 0.62;
+        if (cat.vy > 0) g *= PH.fallMul;
+        if (PH.apexV && Math.abs(cat.vy) < PH.apexV) g *= PH.apexMul;
         if (cat.vy >= 0) cat.rising = false;
         cat.holdT += dt;
         cat.vy = Math.min(cat.vy + g * dt, MAXFALL);
@@ -967,7 +976,7 @@
           const up = pl.k === 'm' ? 20 : 16, down = pl.k === 'm' ? 8 : pl.k === 'w' ? 5 : 3;
           if (s !== null && s >= cat.y - up && s <= cat.y + down) { if (s0 === null || s < s0) { s0 = s; plg = pl; } }
         }
-        if (s0 === null) { cat.g = false; cat.coy = 0.1; cat.vy = 0; }
+        if (s0 === null) { cat.g = false; cat.coy = PH.coy; cat.vy = 0; }
         else { cat.y = s0; lastGY = grav > 0 ? s0 : lastGY; if (plg.k === 'm') moonLand(plg); if (plg.k === 'w') plg.ridden = true; }
       }
       inU = false; if (grav < 0) { cat.y = FM2() - cat.y; cat.vy = -cat.vy; }
@@ -979,7 +988,7 @@
     for (const c of coins) {
       if (c.taken) continue;
       if (Math.abs(c.x - cat.x) < 17 && Math.abs(c.y - cmy) < 26) {
-        c.taken = true; bonus += 100; coinsN++; Snd.sfx('coin'); if (coinsN === 50) ach('hoard');
+        c.taken = true; bonus += 100; coinsN++; Snd.sfx('coin'); juiceCoin(c.x, c.y); if (coinsN === 50) ach('hoard');
         const recent = floats.find(f => f.coin && f.t < 0.35);
         if (recent) { recent.n += 100; recent.s = '+' + recent.n; recent.t = 0; recent.x = cat.x; recent.y = cat.y - 36; }
         else floats.push({ x: cat.x + 4, y: cat.y - 36, t: 0, s: '+100', c: '#FFE500', coin: true, n: 100 });
@@ -1073,7 +1082,7 @@
       if (hit(br)) {
         if (cat.boost > 0) { b.dead = true; b.vy = -200; Snd.sfx('smash'); bonus += 200; floats.push({ x: b.x, y: b.y - 20, t: 0, s: '+200', c: '#ffffff' }); }
         else if (grav > 0 && !cat.g && cat.vy > 40 && cat.y - (b.y - 16) < 13) {
-          b.dead = true; b.vy = -120; cat.vy = -280; cat.rising = true; cat.holdT = 0; cat.air = 1; bonus += 200; Snd.sfx('stomp'); if (RS) { RS.stomps++; statAdd('stomps', 1); }
+          b.dead = true; b.vy = -120; cat.vy = -280; cat.rising = true; cat.holdT = 0; cat.air = 1; bonus += 200; Snd.sfx('stomp'); juiceHit(0.06, 0.12, b.x, b.y - 8); if (RS) { RS.stomps++; statAdd('stomps', 1); }
           floats.push({ x: b.x, y: b.y - 22, t: 0, s: 'STOMP +200', c: '#ffffff' });
         }
         else if (!invuln && hurt('bear')) return;
@@ -1084,6 +1093,7 @@
     if (grav > 0 ? cat.y - 44 > baseY + 4 : cat.y + 44 < playTop - 4) { if (DBG.god) die('fell'); else rescueFall('fell'); }
   }
   function land(s, pl) {
+    juiceLand(s, cat.vy);
     cat.y = s; cat.vy = 0; cat.g = true; cat.air = 1; cat.rising = false; if (grav > 0) lastGY = s;
     const ry = grav > 0 ? s : FM2() - s;
     for (let i = 0; i < 3; i++) parts.push({ x: cat.x + rand(-6, 6), y: ry, vx: rand(-30, 30), vy: rand(-30, -5) * grav, l: 0.25, c: '#cfc3ff', s: 1 });
@@ -1162,7 +1172,7 @@
   }
   function bossStomp() {
     const B = boss; if (!B || B.ph !== 'charge') return;
-    B.hp--; B.flash = 0.5; shake = Math.max(shake, 0.2);
+    B.hp--; B.flash = 0.5; shake = Math.max(shake, 0.2); juiceHit(0.07, 0.2, cat.x, B.hy);
     cat.vy = -430; cat.g = false; cat.rising = false; cat.air = 1; cat.inv = Math.max(cat.inv, 0.5);
     bonus += 500; floats.push({ x: cat.x, y: cat.y - 56, t: 0, s: 'STOMP! +500', c: '#FFE500' }); Snd.sfx('kingHit');
     for (let i = 0; i < 12; i++) parts.push({ x: cat.x, y: B.hy, vx: rand(-110, 110), vy: rand(-140, 0), l: 0.5, c: i % 2 ? '#FFE500' : '#ffffff', s: 2 });
@@ -1348,6 +1358,57 @@
     ctx.drawImage(bgCache[key], Math.round(cx) - r, Math.round(cy) - r);
   }
 
+  // ---------- v5.3 game feel ("juice"): all visual. Nothing here is read by the simulation, and nothing is spawned while a
+  // replay is being re-simulated, so replays/verification are unaffected. Uses Math.random (never the seeded sim RNG).
+  const RM = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
+  const SHAKE_K = RM ? 0.3 : 1;
+  const vis = { sx: 1, sy: 1 }, vfx = []; let hitStop = 0, flashT = 0, flashCol = '#ffffff';
+  const vr = (a, b) => a + Math.random() * (b - a);
+  function juiceJump(v) {
+    if (replaying) return;
+    vis.sx = 0.8; vis.sy = 1.22;
+    if (cat.g || cat.coy > 0) for (let i = 0; i < 4; i++) vfx.push({ k: 'dust', x: cat.x + vr(-7, 7), y: grav > 0 ? cat.y : FM2() - cat.y, vx: vr(-25, 25), vy: vr(-12, -2) * grav, l: 0.28, L: 0.28, r: 1 });
+  }
+  function juiceLand(s, vy) {
+    if (replaying) return;
+    const k = clamp(Math.abs(vy) / 520, 0.25, 1);
+    vis.sx = 1 + 0.28 * k; vis.sy = 1 - 0.24 * k;
+    const ry = grav > 0 ? s : FM2() - s, n = 3 + Math.round(k * 4);
+    for (let i = 0; i < n; i++) { const d = i % 2 ? 1 : -1; vfx.push({ k: 'dust', x: cat.x + d * vr(4, 10), y: ry - 1, vx: d * vr(25, 60) * k, vy: vr(-14, -4) * grav, l: 0.32, L: 0.32, r: 1 + (i < 2 ? 1 : 0) }); }
+    if (vfx.length > 90) vfx.splice(0, vfx.length - 90);
+  }
+  function juiceHit(stop, sh, x, y, big) {
+    if (replaying) return;
+    if (stop) hitStop = Math.max(hitStop, stop);
+    if (sh) shake = Math.max(shake, sh);
+    vfx.push({ k: 'ring', x, y, l: big ? 0.3 : 0.16, L: big ? 0.3 : 0.16, c: '#ffffff', r0: big ? 8 : 4, r1: big ? 30 : 16 });
+  }
+  function juiceCoin(x, y) {
+    if (replaying) return;
+    vfx.push({ k: 'ring', x, y, l: 0.18, L: 0.18, c: '#FFE500', r0: 3, r1: 11 });
+    for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + vr(-0.3, 0.3); vfx.push({ k: 'spark', x, y, vx: Math.cos(a) * 70, vy: Math.sin(a) * 70, l: 0.25, L: 0.25 }); }
+    if (vfx.length > 90) vfx.splice(0, vfx.length - 90);
+  }
+  function juiceFlash(col) { if (replaying) return; flashT = 0.2; flashCol = col || '#ffffff'; vis.sx = 1.15; vis.sy = 0.9; }
+  function updJuice(dt) {
+    const e = 1 - Math.exp(-dt * 16); vis.sx += (1 - vis.sx) * e; vis.sy += (1 - vis.sy) * e;
+    flashT = Math.max(0, flashT - dt);
+    for (let i = vfx.length - 1; i >= 0; i--) { const q = vfx[i]; q.l -= dt; if (q.l <= 0) { vfx.splice(i, 1); continue; } if (q.vx !== undefined) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.9; q.vy *= 0.9; } }
+  }
+  function drawJuice(sx) {
+    for (const q of vfx) {
+      const a = q.l / q.L, x = Math.round(q.x - sx), y = Math.round(q.y);
+      if (q.k === 'dust') { ctx.globalAlpha = Math.min(1, a * 1.6) * 0.8; ctx.fillStyle = '#d9d0ff'; const r = q.r + (a < 0.5 ? 1 : 0); ctx.fillRect(x - (r >> 1), y - r, r, r); }
+      else if (q.k === 'spark') { ctx.globalAlpha = 1; ctx.fillStyle = a > 0.5 ? '#ffffff' : '#FFE500'; ctx.fillRect(x - 1, y, 3, 1); ctx.fillRect(x, y - 1, 1, 3); }
+      else if (q.k === 'ring') {
+        ctx.globalAlpha = Math.min(1, a * 1.5); ctx.fillStyle = q.c; const r = Math.round(q.r0 + (q.r1 - q.r0) * (1 - a));
+        for (let i = 0; i < 16; i++) { const t = i / 16 * Math.PI * 2; ctx.fillRect(Math.round(x + Math.cos(t) * r), Math.round(y + Math.sin(t) * r), 1, 1); }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawFlash() { if (flashT <= 0) return; ctx.globalAlpha = (flashT / 0.2) * (RM ? 0.15 : 0.35); ctx.fillStyle = flashCol; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#ffffff'; ctx.globalAlpha *= 0.6; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1; }
+
   // ---------- draw world ----------
   function drawCandle(c, sx) {
     const x = Math.round(c.x - sx), y = Math.round(c.y);
@@ -1486,6 +1547,7 @@
     // particles
     for (const q of parts) { ctx.globalAlpha = clamp(q.l * 3, 0, 1); ctx.fillStyle = q.c; ctx.fillRect(Math.round(q.x - sx), Math.round(q.y), q.s, q.s); }
     ctx.globalAlpha = 1;
+    drawJuice(sx);
     for (const f of floats) text(f.s, Math.round(f.x - sx), Math.round(f.y - f.t * 22), f.c, { align: 'center', shadow: '#1a0f30' });
   }
   function drawCat(x, y) {
@@ -1517,12 +1579,14 @@
         ctx.fillStyle = '#ffffff'; ctx.fillRect(X + ox + 2, Y - 2, 2, 2);
       }
     }
-    if (cat.boost > 0 && Math.floor(bgT * 10) % 4 === 0) { ctx.globalAlpha = 0.5; drawSpr(S.catWhite, X - 19, Y - 46); ctx.globalAlpha = 1; }
-    drawSpr(fr, X - 19, Y - 46);
-    if (skinId === 'astro') ctx.drawImage(getHelmet(), X - 23, Y - 55);
+    const sw = cat.boost > 0 ? 38 : Math.round(38 * vis.sx), shh = cat.boost > 0 ? 46 : Math.round(46 * vis.sy), sxo = X - (sw >> 1), syo = Y - shh;
+    const catImg = img => ctx.drawImage(img, sxo, syo, sw, shh);
+    if (cat.boost > 0 && Math.floor(bgT * 10) % 4 === 0) { ctx.globalAlpha = 0.5; catImg(S.catWhite); ctx.globalAlpha = 1; }
+    catImg(fr);
+    if (skinId === 'astro') ctx.drawImage(getHelmet(), X - 23, Y - 55 + (46 - shh));
     if (skinId === 'laser' && state === 'play' && Math.floor(bgT * 1.5) % 3 === 0) { ctx.fillStyle = 'rgba(255,40,50,0.55)'; ctx.fillRect(X + 12, Y - 31, W - X, 1); ctx.fillRect(X + 12, Y - 30, W - X, 1); ctx.fillStyle = '#ffd0d0'; ctx.fillRect(X + 12, Y - 31, 3, 2); }
     if (skinId === 'gold' && Math.floor(bgT * 5) % 5 === 0) { ctx.fillStyle = '#ffffff'; const k = Math.floor(bgT * 5) % 3; ctx.fillRect(X - 10 + k * 9, Y - 40 + k * 7, 1, 3); ctx.fillRect(X - 11 + k * 9, Y - 39 + k * 7, 3, 1); }
-    if (pwT.dia > 0 && Math.floor(bgT * 12) % 3 === 0) { ctx.globalAlpha = 0.55; drawSpr(S.catWhite, X - 19, Y - 46); ctx.globalAlpha = 1; } // DIAMOND PAWS shimmer
+    if (pwT.dia > 0 && Math.floor(bgT * 12) % 3 === 0) { ctx.globalAlpha = 0.55; catImg(S.catWhite); ctx.globalAlpha = 1; } // DIAMOND PAWS shimmer
   }
 
   // ---------- v5 sprites: skins (minimal edits of the traced sprite), front-runner shadows, Bear King, rocket ----------
@@ -1690,7 +1754,7 @@
   // ---------- v5 screens: cutscene, YOU MADE IT, trophies view, toasts, credits, share ----------
   function drawEnding() {
     const t = stateT, R = getRocket(), E2 = endInfo || { rsx: W * 0.6, gy: baseY - 64 };
-    const cs = (Math.random() * 2 - 1) * shake * 6; ctx.save(); ctx.translate(Math.round(cs), 0);
+    const cs = (Math.random() * 2 - 1) * shake * 6 * SHAKE_K; ctx.save(); ctx.translate(Math.round(cs), 0);
     if (t < 6.5) { // 1-3: board, countdown, liftoff on the pad at dawn
       BG.drawZone(STAGES, 1, {}); drawWorld(true);
       const rx = Math.round(E2.rsx), gy = E2.gy, lift = t < 4.5 ? 0 : Math.round(60 * Math.pow(t - 4.5, 2) + 12 * (t - 4.5));
@@ -2148,7 +2212,7 @@
 
   function render() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const sh = shake > 0 ? Math.round((Math.random() * 4 - 2) * shake * 6) : 0;
+    const sh = shake > 0 ? Math.round((Math.random() * 4 - 2) * shake * 6 * SHAKE_K) : 0;
     ctx.translate(sh, Math.round(sh * 0.5));
     drawBackground();
     if (state === 'gate') { drawGate(); return; }
@@ -2158,7 +2222,7 @@
     if (state === 'moonwin') { drawMoonWin(); drawToggles(); return; }
     drawWorld();
     if (pwT.slow > 0 && state === 'play') { ctx.fillStyle = 'rgba(255,216,74,0.07)'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(255,216,74,0.35)'; ctx.fillRect(0, 0, W, 1); ctx.fillRect(0, H - 1, W, 1); }
-    if (state === 'play' || state === 'dying') { drawFlipFx(); drawBanner(); drawHUD(); drawHint(); }
+    if (state === 'play' || state === 'dying') { drawFlash(); drawFlipFx(); drawBanner(); drawHUD(); drawHint(); }
     if (state === 'over') { drawOver(); if (result && result.claimShow && result.claim) drawClaim(); else drawToggles(); }
     if (paused && state === 'play') drawPause();
     if (MEM) drawMem();
@@ -2192,6 +2256,7 @@
     requestAnimationFrame(frame);
     if (DBG.manual) return;
     const real = Math.min(0.25, last ? (ts - last) / 1000 : FIX); last = ts;
+    if (hitStop > 0) { hitStop -= real; acc = 0; render(); renderTop(real); return; } // freeze frame: no sim steps at all
     acc += real; let n = 0;
     while (acc >= FIX && n < 8) { update(FIX); acc -= FIX; n++; }
     if (n >= 8) acc = 0; // way behind (tab was hidden): drop the backlog instead of fast-forwarding
@@ -2206,6 +2271,7 @@
     get rec() { return REC; }, get stats() { return { dist: Math.floor(dist / 2), bonus, coinsN, runT: +runT.toFixed(1) }; }, get state() { return state; }, get stateT() { return stateT; }, get paused() { return paused; }, get score() { return score(); }, get zone() { return zone; }, get boost() { return cat.boost; },
     get result() { return result; }, get death() { return lastDeath; }, get size() { return [W, H, SCALE]; },
     advance(n, dt) { dt = dt || 1 / 60; for (let i = 0; i < n; i++) update(dt); render(); },
+    advanceReal(n, dt) { dt = dt || 1 / 60; for (let i = 0; i < n; i++) { if (hitStop > 0) { hitStop -= dt; continue; } update(dt); } render(); }, // like frame(): hit-stop freezes the sim
     press: (x, y) => press(x, y), release, start: startGame, boost: startBoost, leaveGate,
     get ui() { return UI; }, get audio() { const A = D.Audio; return A && { ctx: A.ctx ? A.ctx.state : null, song: A.cur ? A.cur.name : null, music: A.musicOn, sfx: A.sfxOn }; },
     get dbgStage() { return { onWhale: cat.g && plats.some(w => w.k === 'w' && surf(w, cat.x, 10) !== null && Math.abs(surf(w, cat.x, 10) - cat.y) < 3), inPress: presses.some(q => q.ph === 3 && cat.x > q.x0 + 10 && cat.x < q.x1 - 10), flipWarn: !!flipWarn, grav, cat: { x: cat.x, y: cat.y, vy: cat.vy, g: cat.g }, presses: presses.map(q => ({ x0: q.x0, x1: q.x1, fy: q.fy, ph: q.ph, bot: q.bot })), plats: plats.filter(p => p.k === 'c' && Math.abs(p.x - cat.x) < 80).map(p => [Math.round(p.x), p.w, Math.round(p.y), p.red ? 1 : 0, p.plate ? 1 : 0]) }; },
@@ -2214,6 +2280,6 @@
     get v5() { return { boss: boss && { ph: boss.ph, hp: boss.hp, sx: boss.sx, hy: boss.hy, done: boss.done }, shadows: shadows.length, waves: waves.length, launchPad, reachedMoon, endInfo, skin: skinId, ach: Object.keys(achSet), stats, toasts: toasts.length, lastShare, pending: !!pendingBanner }; },
     shareText: () => result && shareText(result), shareUrl, setSkin: id => { skinId = id; }, unlockAll: () => { ACH.forEach(a => { achSet[a[0]] = achSet[a[0]] || 1; }); LS.set(ACHKEY, JSON.stringify(achSet)); }, achReset: () => { achSet = {}; stats = {}; LS.set(ACHKEY, '{}'); LS.set(STATKEY, '{}'); skinId = 'classic'; toasts.length = 0; },
     toEnding: () => { if (state === 'play') reachEnding(); }, skin: id => skinFrames(id), stageLabel, ztype, get achPage() { return achPage; }, set achPage(v) { achPage = v; },
-    kill: () => die('test'), simulate, get replay() { return lastReplay; }, get version() { return VERSION; }, get simFrame() { return simFrame; }, Scores, LocalScores, RemoteScores, sanitizeName
+    kill: () => die('test'), simulate, get replay() { return lastReplay; }, get version() { return VERSION; }, get juice() { return { vis: { sx: +vis.sx.toFixed(2), sy: +vis.sy.toFixed(2) }, vfx: vfx.length, hitStop, flashT, phys: PH === PHYS.v53 ? 'v53' : 'v52', rm: RM }; }, physFor: v => physFor(v) === PHYS.v53 ? 'v53' : 'v52', get simFrame() { return simFrame; }, Scores, LocalScores, RemoteScores, sanitizeName
   };
 })(window.DECICAT);
