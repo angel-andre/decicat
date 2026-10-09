@@ -28,7 +28,7 @@ const MIN_RANKED_MS = 2000;    // shorter runs are stored but not ranked (never 
 const MAX_RUN_MS = 2 * 60 * 60 * 1000;
 const RATE_PER_MIN = 30;       // score posts per IP per minute (friends often share an IP)
 const REPLAY_TOP = 50;         // keep replays only for the top 50
-const CLAIM_TOP = 20;          // claim codes for the top 20
+const CLAIM_TOP = 5;           // score codes for the top 5
 const CLAIM_ABC = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const BAD = ['fuck', 'shit', 'cunt', 'bitch', 'nigg', 'fag', 'rape', 'nazi', 'hitler', 'whore', 'slut', 'dick', 'cock', 'pussy', 'asshole', 'retard', 'kike', 'spic', 'chink', 'twat', 'wank', 'porn', 'cum', 'tits'];
 

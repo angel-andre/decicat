@@ -3600,17 +3600,17 @@ G.LOGO.mark40 = [".......................###........", "......................##
     const R = result; R.claimT = (R.claimT || 0) + 1 / 60;
     ctx.fillStyle = 'rgba(4,2,10,0.86)'; ctx.fillRect(0, 0, W, H);
     const big = textW(R.claim, 2, true) <= W - 24 ? 2 : 1;
-    const bw = Math.min(W - 8, Math.max(textW(R.claim, big, true), textW("YOU'LL NEED IT TO CLAIM A PRIZE.")) + 20), bh = 96;
+    const bw = Math.min(W - 8, Math.max(textW(R.claim, big, true), textW("KEEP IT TO PROVE THIS SCORE IS YOURS.")) + 20), bh = 96;
     const bx = Math.round(W / 2 - bw / 2), by = Math.round(H / 2 - bh / 2);
     ctx.fillStyle = '#FFE500'; ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
     ctx.fillStyle = '#1a1030'; ctx.fillRect(bx, by, bw, bh);
     let y = by + 7;
-    text('TOP 20! #' + R.rank, W / 2, y, '#a8e6a1', { align: 'center', bold: true }); y += 11;
-    text('YOUR CLAIM CODE', W / 2, y, '#d9d0ff', { align: 'center' }); y += 11;
+    text('TOP 5! #' + R.rank, W / 2, y, '#a8e6a1', { align: 'center', bold: true }); y += 11;
+    text('YOUR SCORE CODE', W / 2, y, '#d9d0ff', { align: 'center' }); y += 11;
     ctx.fillStyle = '#2d2050'; ctx.fillRect(bx + 6, y - 3, bw - 12, big === 2 ? 18 : 11);
     text(R.claim, W / 2, y, '#FFE500', { align: 'center', scale: big, bold: true, shadow: '#5a3a00' }); y += big === 2 ? 20 : 13;
     text('SCREENSHOT THIS!', W / 2, y, '#ffffff', { align: 'center', bold: true }); y += 10;
-    text("YOU'LL NEED IT TO CLAIM A PRIZE.", W / 2, y, '#ffffff', { align: 'center' }); y += 12;
+    text("KEEP IT TO PROVE THIS SCORE IS YOURS.", W / 2, y, '#ffffff', { align: 'center' }); y += 12;
     if (R.claimT > 1.2 && Math.floor(bgT * 2) % 2 === 0) text('TAP TO CONTINUE', W / 2, y, '#bdb3e6', { align: 'center' });
   }
   function drawPause() {
