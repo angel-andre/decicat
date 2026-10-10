@@ -1839,7 +1839,9 @@
       BG.drawZone(0, 1, {});
       const by = Math.round(H * 0.45 + Math.sin(t * 3) * 4), bx = Math.round(W * 0.3 + (t - 6.5) * W * 0.12);
       ctx.fillStyle = 'rgba(255,255,255,0.7)'; for (let i = 0; i < 24; i++) { const sy = Math.round(hash01(i * 7) * H), sx2 = Math.round(W - ((t * 600 + i * 97) % (W + 60))); ctx.fillRect(sx2, sy, 8 + (i % 3) * 6, 1); }
-      for (let i = 0; i < 6; i++) { ctx.fillStyle = ['#ffffff', '#FFE500', '#ff8a2a', '#D9584E', '#a8a0c0', '#5a4a7a'][i]; ctx.fillRect(bx - 4 - i * 6 - (Math.floor(bgT * 20) % 2) * 2, by + 11 - Math.max(1, 5 - i), 6, Math.max(2, 10 - i * 1.4)); }
+      // exhaust: the side sprite's nozzle is at x = bx+2, rows by+11..by+20 (centre by+16); segments are centred on that row and the
+      // first one starts right at the nozzle (only the outer segments flicker in length, so there's never a gap)
+      { const fl = Math.floor(bgT * 20) % 2; for (let i = 0; i < 6; i++) { const h = Math.max(2, Math.round(10 - i * 1.4)), w = 6 + (i > 0 ? fl * 2 : 0); ctx.fillStyle = ['#ffffff', '#FFE500', '#ff8a2a', '#D9584E', '#a8a0c0', '#5a4a7a'][i]; ctx.fillRect(bx + 2 - (i + 1) * 6 - (i > 0 ? fl * 2 : 0), by + 16 - (h >> 1), w, h); } }
       ctx.drawImage(R.side, bx, by);
       if (t < 8.6) text('TO THE MOON...', W / 2, Math.round(playTop + playH * 0.14), '#FFE500', { align: 'center', bold: true, shadow: '#2a1d4a' });
     } else { // 5: landing on the big yellow Decibel moon + TRADE LOUD. + fireworks
