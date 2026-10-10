@@ -82,7 +82,9 @@ export class Leaderboard extends DurableObject {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS scores (id TEXT PRIMARY KEY, name TEXT NOT NULL, score INTEGER NOT NULL, run_ms INTEGER NOT NULL, at INTEGER NOT NULL, ranked INTEGER NOT NULL DEFAULT 1)`);
       this.sql.exec(`CREATE INDEX IF NOT EXISTS scores_rank ON scores (ranked, score DESC, at ASC)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, id TEXT NOT NULL, at INTEGER NOT NULL)`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS nonces_at ON nonces (at)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS rl (ip TEXT NOT NULL, minute INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (ip, minute))`);
+      this.sql.exec(`CREATE INDEX IF NOT EXISTS rl_minute ON rl (minute)`);
       this.sql.exec(`CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)`);
       // v4 columns (idempotent migration of the live table): replay JSON (top 50 only), claim-code hash, client version, had-replay flag
       const cols = new Set(this.sql.exec(`PRAGMA table_info(scores)`).toArray().map(c => c.name));
@@ -145,12 +147,32 @@ export class Leaderboard extends DurableObject {
       note: 'days are UTC; runs = page loads that started at least one run'
     };
   }
-  topList() { return this.sql.exec(`SELECT id, name, score, rp AS vf, COALESCE(v_moon, moon) AS moon FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray(); }
-  total() { return this.sql.exec(`SELECT COUNT(*) AS c FROM scores WHERE ranked = 1`).one().c; }
+  // in-memory caches (rebuilt lazily once per Durable Object wake) so hot reads don't rescan the table
+  _cmp(a, b) { return (b.score - a.score) || (a.at - b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0); }
+  // the sorted board is also persisted as ONE meta row, so waking the object costs 1 row read instead of a table scan
+  _load() {
+    if (this._all) return;
+    const m = this.sql.exec(`SELECT v FROM meta WHERE k = 'board_v1'`).toArray()[0];
+    if (m) { try { const a = JSON.parse(m.v); this._all = a.map(r => ({ id: r[0], score: r[1], at: r[2] })); return; } catch (e) { } }
+    this._all = this.sql.exec(`SELECT id, score, at FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC, id ASC`).toArray();
+    this._saveBoard();
+  }
+  _saveBoard() { this.sql.exec(`INSERT OR REPLACE INTO meta (k, v) VALUES ('board_v1', ?)`, JSON.stringify(this._all.map(r => [r.id, r.score, r.at]))); }
+  _dirty() { this._top = null; }
+  _resetCache() { this._all = null; this._top = null; }
+  topList() {
+    if (!this._top) this._top = this.sql.exec(`SELECT id, name, score, rp AS vf, COALESCE(v_moon, moon) AS moon FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?`, TOP_N).toArray();
+    return this._top;
+  }
+  total() { this._load(); return this._all.length; }
+  _insertMem(row) {
+    this._load(); const a = this._all; let lo = 0, hi = a.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (this._cmp(a[m], row) < 0) lo = m + 1; else hi = m; }
+    a.splice(lo, 0, row); this._saveBoard(); return lo + 1;
+  }
   rankOf(id) {
-    const r = this.sql.exec(`SELECT score, at, ranked FROM scores WHERE id = ?`, id).toArray()[0];
-    if (!r || !r.ranked) return 0;
-    return this.sql.exec(`SELECT COUNT(*) AS c FROM scores WHERE ranked = 1 AND (score > ? OR (score = ? AND at < ?) OR (score = ? AND at = ? AND id < ?))`, r.score, r.score, r.at, r.score, r.at, id).one().c + 1;
+    this._load(); const i = this._all.findIndex(r => r.id === id);
+    return i < 0 ? 0 : i + 1;
   }
   async top() { return { top: this.topList(), total: this.total() }; }
   async submit(body, ip) {
@@ -175,11 +197,13 @@ export class Leaderboard extends DurableObject {
     const id = now.toString(36) + Math.random().toString(36).slice(2, 8);
     this.sql.exec(`INSERT INTO scores (id, name, score, run_ms, at, ranked, ver, note, moon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, sanitizeName(body.name), score, runMs, now, ranked, String(body.v || (rp && rp.v) || '').slice(0, 16), debugRun ? 'debug' : null, body.moon && runMs >= MOON_MIN_MS ? 1 : 0);
     this.sql.exec(`INSERT INTO nonces (nonce, id, at) VALUES (?, ?, ?)`, nonce, id, now);
-    const rank = this.rankOf(id);
+    const rank = ranked ? this._insertMem({ id, score, at: now }) : 0;
+    if (ranked && rank <= TOP_N) this._dirty();
     if (rp && rank > 0 && rank <= REPLAY_TOP) {
       this.sql.exec(`UPDATE scores SET replay = ?, rp = 1 WHERE id = ?`, JSON.stringify(rp), id);
       // drop replays of runs that have fallen out of the top 50 (rp stays 1 = it was submitted with a replay)
-      this.sql.exec(`UPDATE scores SET replay = NULL WHERE replay IS NOT NULL AND id NOT IN (SELECT id FROM scores WHERE ranked = 1 ORDER BY score DESC, at ASC LIMIT ?)`, REPLAY_TOP);
+      const out = this._all[REPLAY_TOP]; // the run just pushed out of the replay window
+      if (out) this.sql.exec(`UPDATE scores SET replay = NULL WHERE id = ?`, out.id);
     }
     return { status: 200, body: await this.answer(id, false, debugRun) };
   }
@@ -208,13 +232,13 @@ export class Leaderboard extends DurableObject {
   async adminVerify(id, ok, moon) {
     const r = this.sql.exec(`SELECT id FROM scores WHERE id = ?`, String(id || '')).toArray()[0];
     if (!r) return null;
-    this.sql.exec(`UPDATE scores SET v_ok = ?, v_moon = ?, v_at = ? WHERE id = ?`, ok ? 1 : 0, moon ? 1 : 0, Date.now(), r.id);
+    this.sql.exec(`UPDATE scores SET v_ok = ?, v_moon = ?, v_at = ? WHERE id = ?`, ok ? 1 : 0, moon ? 1 : 0, Date.now(), r.id); this._dirty();
     return { ok: true, id: r.id, verified: !!ok, reachedMoon: !!moon };
   }
   // archive every score into a dated table, then clear the live board (scores + nonces); the legacy import flag stays set
   async adminReset() {
     const before = this.sql.exec(`SELECT COUNT(*) AS c FROM scores`).one().c;
-    this.sql.exec(`DELETE FROM scores`); this.sql.exec(`DELETE FROM nonces`);
+    this.sql.exec(`DELETE FROM scores`); this.sql.exec(`DELETE FROM nonces`); this.sql.exec(`DELETE FROM meta WHERE k = 'board_v1'`); this._resetCache();
     return { ok: true, cleared: before, total: this.total() };
   }
   async adminEntry(id, rank) {
