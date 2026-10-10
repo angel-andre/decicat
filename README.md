@@ -2,14 +2,26 @@
 
 A one-touch pixel-art runner. Hop across candlestick charts, stomp bears, outsmart a boss, and ride a rocket to the moon.
 
-**[Play it in your browser](https://decicat.bitcade.xyz/play)**
+**[Play it in your browser](https://decicat.bitcade.xyz/play)** · free, no sign-up, works on phones and right inside X
+
+![Decicat gameplay: Whale Waters, the Bear King and Moon Mode](docs/gameplay.gif)
 
 ![DECICAT title screen](docs/screenshots/title.png)
 
+## Highlights
+
+- **10 hand-made stages**, each with its own scenery, hazards and original music
+- **A boss fight** against the Bear King, then a **rocket ride to the Decibel moon**
+- **Endless Moon Mode** after the ending: low gravity, meteors and solar wind storms
+- **Power-ups**, a 40x rocket boost, **14 trophies** and **6 skins**
+- **Global leaderboard** with exact ranks, verifiable replays and **Score Codes** for the top 5
+- **Privacy-first**: no accounts, no cookies, only an anonymous daily player count
+- Plain JavaScript in one self-contained HTML file: no frameworks, no image or audio files
+
 ## Credits
 
-Original Decicat concept by [@doncastro](https://x.com/doncastro).
-Game by [@angelataptos](https://x.com/angelataptos).
+Original Decicat concept by [@doncastro](https://x.com/doncastro)  
+Game by [@angelataptos](https://x.com/angelataptos)
 
 ## How to play
 
@@ -48,7 +60,13 @@ Each stage lasts 45 seconds and gets a little harder from start to finish. Every
 | 9 | Bear King | A storm castle of red charts and a boss fight. |
 | 10 | Launch Pad | A dawn rocket facility with gantries, countdown boards and bears, ending on the steel pad where the rocket waits. |
 
+| Whale Waters | Flash Crash |
+| --- | --- |
+| ![Riding a whale in Whale Waters](docs/screenshots/whale_waters.png) | ![Flash Crash](docs/screenshots/flash_crash.png) |
+
 ### Front-Runner Alley
+
+![Front-Runner Alley](docs/screenshots/front_runner_alley.png)
 
 A red dotted line shows which lane a bot has locked onto. Bots can only trip you while you're on the ground in their lane, so be in the air as one passes (+50) or land on it to stomp it (+100).
 
@@ -68,15 +86,17 @@ The lunge is your opening. Land on his head three times to beat him. His health 
 
 Make it through stage 10 and Decicat boards the rocket. A short cutscene plays the countdown, the liftoff and the flight, and lands on the big Decibel moon with fireworks. You can tap to skip it. Then comes the "You made it to the Moon!" screen with your run time, your score and a +10000 bonus.
 
-| Liftoff | Landing |
-| --- | --- |
-| ![Rocket liftoff](docs/screenshots/ending_liftoff.png) | ![Landing on the Decibel moon](docs/screenshots/ending_landing.png) |
+| Liftoff | To the moon | Landing |
+| --- | --- | --- |
+| ![Rocket liftoff](docs/screenshots/ending_liftoff.png) | ![The rocket flying to the moon](docs/screenshots/ending_travel.png) | ![Landing on the Decibel moon](docs/screenshots/ending_landing.png) |
 
 ### Moon Mode
 
 ![Moon Mode](docs/screenshots/moon_mode.png)
 
 After the ending the run keeps going in Moon Mode. It is endless and the hardest part of the game: low gravity, falling meteors, and a rotating mix of hazards from the earlier stages that changes every lap while the speed creeps up. The music cycles through faster remixes of the stage tracks.
+
+The moon has no air, so there's no wind up there. Instead, **solar wind** storms roll in: streams of charged particles from the Sun sweep across the sky with a faint aurora, static crackles over the ground and around Decicat, and the push nudges you sideways mid-jump. Earth hangs in the sky above you.
 
 ## Power-ups
 
@@ -88,6 +108,10 @@ Power-ups are rare. Each one appears at most once per stage, and active ones sho
 | Liquidity Magnet | Pulls nearby coins to you for 6 seconds. |
 | Limit Order | Slows the whole game to 0.6x speed for 4 seconds. |
 | Diamond Paws | Makes you invincible for 3 seconds, falls included. |
+
+| Diamond Paws in Short Squeeze | The 40x boost |
+| --- | --- |
+| ![A power-up in action](docs/screenshots/powerups.png) | ![The 40x rocket boost](docs/screenshots/boost_40x.png) |
 
 Each stage also hides one gold **40x** box. Grab it for a 4-second rocket boost that carries you over everything and smashes through red candles, bears and bots in your path.
 
@@ -113,6 +137,8 @@ Five of them also unlock a skin for Decicat. Pick a skin with the arrows next to
 Trophies, skins, your best score and your display name are saved in your browser. There is no account.
 
 ## Leaderboard and Score Codes
+
+![The game-over screen and leaderboard](docs/screenshots/game_over.png)
 
 The online leaderboard shows the global top 20. Every score is kept, so after each run you see your exact place, even if it's #37.
 
@@ -148,7 +174,7 @@ DECICAT is plain JavaScript with no frameworks and no runtime dependencies.
 
 **Determinism.** The game logic runs on a fixed 60 Hz timestep, all randomness comes from one seeded generator, and input is applied only at step boundaries. That is what makes the replay checks possible. Visual effects like dust and screen shake use their own randomness and never touch the game state.
 
-**Backend.** A single Cloudflare Worker serves the game, the X player card and the API. All scores live in one SQLite-backed Durable Object, which gives exact ranks without race conditions. It also handles rate limiting and duplicate-free resubmits.
+**Backend.** A single Cloudflare Worker serves the game, the X player card and the API. All scores live in one SQLite-backed Durable Object, which gives exact ranks without race conditions. It also handles rate limiting and duplicate-free resubmits. Reads are cheap: the sorted board is kept in memory and saved as a single row, so loading the top 20 or working out your rank doesn't rescan the scores table, and the cleanup queries are indexed.
 
 **Single-file build.** `build.mjs` inlines every script into `dist/decicat.html`, one self-contained file that the Worker serves and that also works offline straight from disk.
 

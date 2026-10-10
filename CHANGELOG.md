@@ -2,6 +2,16 @@
 
 All dates are 2026, Eastern Time. Version numbers match the git tags and GitHub releases.
 
+## v5.6 (Oct 10)
+- **Moon Mode: solar wind** (~03:25). The moon has no air, so the old "GUST" wind is now **SOLAR WIND**: glowing streaks of charged particles from the Sun, a faint aurora shimmer, static crackles on the ground and around Decicat, and an electric hum instead of the whoosh. The push, its timing and the seeded randomness are exactly the same, so every existing replay and score still verifies. Earth stages keep their wind gusts.
+- **Moon Mode Earth** (~03:00): the night side was drawn as an offset dithered ring that overlapped the planet. It is now a clean crescent shadow lit from the upper left. Visual only.
+- **Rocket exhaust** (~03:40): in the "To the moon..." flight the flame sat a few pixels above the nozzle and flickered away from it. It is now centred on the nozzle and always attached. Visual only.
+- Docs: new screenshots, gameplay GIF and README refresh from the current build.
+- Gameplay, physics and replays are unchanged from v5.4 (the in-game version string stays `v5.4`).
+
+## v5.5 (Oct 9, ~16:25)
+- **Leaderboard reads:** the sorted board is cached in memory and persisted as a single row, so loading the top 20, counting the total and finding your rank no longer rescan the scores table. New indexes for the nonce and rate-limit cleanup. Server only; no change to the game, the API or stored scores.
+
 ## v5.4 (Oct 9, ~10:25)
 - Privacy-first player count: an anonymous daily count of players so we know how many people are enjoying the game. It uses only a random per-browser ID, stored on the server as a salted one-way hash. No IPs, names, cookies or device details; fully separate from the leaderboard. Admin view: `GET /api/admin/stats` / `tools/stats.mjs`.
 - Gameplay and replays unchanged (v5.4 uses the v5.3 physics).
