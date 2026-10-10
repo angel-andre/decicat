@@ -572,8 +572,17 @@
         let g; [c, g] = mk(r * 2 + 3, r * 2 + 3); const cx = r + 1, cy = r + 1;
         disc(g, cx, cy, r + 1, '#4a6aa8'); disc(g, cx, cy, r, '#1a3466');
         const rng = mul(77); for (let i = 0; i < 7; i++) { const a = rng() * 6.28, d = rng() * r * 0.7; dithCircle(g, Math.round(cx + Math.cos(a) * d), Math.round(cy + Math.sin(a) * d), Math.max(2, Math.round(r * (0.18 + rng() * 0.2))), '#2c5a34', q => 1.4 - q); }
-        dithCircle(g, cx + Math.round(r * 0.35), cy + Math.round(r * 0.3), r, '#070818', q => q > 0.55 ? 0.7 : 0); // night side
-        const im = g.getImageData(0, 0, c.width, c.height), d = im.data; for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy > (r + 1.2) * (r + 1.2)) d[(y * c.width + x) * 4 + 3] = 0; } g.putImageData(im, 0, 0);
+        // night side: a clean crescent terminator. Pixels outside a "lit" disc offset toward the upper-left light are darkened,
+        // with a 2-px checker-dithered band at the edge (purely cosmetic; cached canvas, no RNG, no gameplay state)
+        const lx = cx - r * 0.42, ly = cy - r * 0.36, lr = r * 1.18;
+        const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+        for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+          const dx = x - cx, dy = y - cy, o = (y * c.width + x) * 4;
+          if (dx * dx + dy * dy > (r + 1.2) * (r + 1.2)) { d[o + 3] = 0; continue; }
+          const dl = Math.hypot(x - lx, y - ly) - lr, night = dl > 1.5 || (dl > -0.5 && (x + y) % 2 === 0);
+          if (night) { d[o] = Math.round(d[o] * 0.3 + 7 * 0.7); d[o + 1] = Math.round(d[o + 1] * 0.3 + 8 * 0.7); d[o + 2] = Math.round(d[o + 2] * 0.3 + 24 * 0.7); }
+        }
+        g.putImageData(im, 0, 0);
         earthCache[k] = c; earthOrder.push(k); while (earthOrder.length > 8) delete earthCache[earthOrder.shift()];
       }
       ctx.drawImage(c, Math.round(E.W * (fx || 0.22) - r), Math.round(by - r * 0.55));
