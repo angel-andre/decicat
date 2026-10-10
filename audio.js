@@ -620,6 +620,11 @@
     },
     warn(t) { [0, 0.16, 0.32].forEach((d, i) => sOsc('p25', i % 2 ? 660 : 880, 0, t + d, 0.11, 0.13)); },
     impact(t) { sOsc('sine', 110, 35, t, 0.35, 0.5); sNoise(t, 0.3, 0.3, 'lowpass', 1200, 150); E.duck(t, 0.65, 0.2); },
+    solar(t) { // Moon Mode SOLAR WIND: electric hum + static crackle (one-shots that unplug themselves; ~16 short-lived nodes)
+      sOsc('sawtooth', 58, 66, t, 1.5, 0.05); sOsc('square', 116, 131, t + 0.03, 1.3, 0.022);
+      sNoise(t, 1.5, 0.045, 'bandpass', 2600, 5400, 7);
+      for (let i = 0; i < 9; i++) sNoise(t + 0.05 + i * 0.16 + Math.random() * 0.06, 0.025, 0.09, 'highpass', 4500 + Math.random() * 2500);
+    },
     gust(t) { sNoise(t, 1.4, 0.16, 'bandpass', 300, 1600, 1.5); sNoise(t + 0.3, 1.0, 0.1, 'bandpass', 1400, 400, 2); },
     power(t) {
       [523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) => { const g = sOsc('p25', f, 0, t + i * 0.045, 0.14, 0.15); send(g, 0.2, 0.3); });

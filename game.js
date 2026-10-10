@@ -838,11 +838,11 @@
     if (boss) updBoss(dt, p);
     const mul = cat.boost > 0 ? BOOST_MUL : 1;
     const v = p.speed * mul;
-    // wind gusts
+    // wind gusts (Moon Mode: SOLAR WIND - same force, timing and RNG; only the sound/visuals differ)
     if (p.wind) {
       gustTimer -= dt;
       if (gustT > 0) { gustT -= dt; if (gustT <= 0) gust = 0; }
-      else if (gustTimer <= 0) { gust = rnd() < 0.75 ? -40 : 32; gustT = 1.6; Snd.sfx('gust'); gustTimer = rand(2.6, 4.6); }
+      else if (gustTimer <= 0) { gust = rnd() < 0.75 ? -40 : 32; gustT = 1.6; Snd.sfx(ztype(zone) === 12 ? 'solar' : 'gust'); gustTimer = rand(2.6, 4.6); }
     } else { gust = 0; gustT = 0; }
     // falling red candles
     if (p.fall && cat.boost <= 0 && runT > 2) {
@@ -1371,6 +1371,7 @@
         const rx = Math.round(x), ry = Math.round(y); ctx.fillRect(rx, ry, 1, 4); if (slant > 1) ctx.fillRect(rx - 1, ry + 3, 1, 3);
       }
     }
+    if (zt === 12 && gustT > 0 && state === 'play') drawSolarSky();
     if (zt === 3 && state !== 'title') {
       ctx.fillStyle = 'rgba(255,110,90,0.35)';
       for (let i = 0; i < 30; i++) { const x = ((i * 71.3 - camX * 0.3) % W + W) % W; const y = (i * 37.7 + bgT * 40 * (1 + i % 3)) % baseY; ctx.fillRect(Math.round(x), Math.round(y), 1, 2); }
@@ -1569,11 +1570,51 @@
     drawWaves(sx); drawShadows(sx);
     // cat
     if (!noCat) drawCat(cat.x - sx, cat.y);
+    if (ztype(zone) === 12 && gustT > 0 && state === 'play') drawSolarSparks(sx);
     // particles
     for (const q of parts) { ctx.globalAlpha = clamp(q.l * 3, 0, 1); ctx.fillStyle = q.c; ctx.fillRect(Math.round(q.x - sx), Math.round(q.y), q.s, q.s); }
     ctx.globalAlpha = 1;
     drawJuice(sx);
     for (const f of floats) text(f.s, Math.round(f.x - sx), Math.round(f.y - f.t * 22), f.c, { align: 'center', shadow: '#1a0f30' });
+  }
+  // ---- Moon Mode SOLAR WIND (render-only: reads gust/gustT, uses hash01 + bgT, never the seeded rnd(); no allocations) ----
+  function solarK() { return Math.max(0, Math.min(1, gustT / 0.35, (1.6 - gustT) / 0.25)); }
+  const SOLAR_COLS = ['#9ffcff', '#c9a6ff', '#ffffff', '#6fe3ff'];
+  function drawSolarSky() {
+    const k = solarK(), dir = gust < 0 ? -1 : 1, T = bgT;
+    for (let b = 0; b < 3; b++) { // faint aurora-like shimmer near the top
+      ctx.fillStyle = b === 1 ? 'rgba(120,255,220,' + (0.16 * k).toFixed(3) + ')' : 'rgba(170,120,255,' + (0.13 * k).toFixed(3) + ')';
+      const y0 = playTop + 16 + b * 9;
+      for (let x = 0; x < W; x += 3) ctx.fillRect(x, Math.round(y0 + Math.sin(x * 0.045 + T * 1.7 + b * 1.3) * 4 + Math.sin(x * 0.13 - T * 2.3) * 1.5), 3, 3 + ((x / 3 + b) % 4 === 0 ? 2 : 0));
+    }
+    const span = W + 60, hgt = Math.max(20, baseY - playTop - 24); // streaks of charged particles flowing from the Sun's side
+    for (let i = 0; i < 56; i++) {
+      if (hash01(i * 7 + 1) > k + 0.05) continue;
+      const sp = 220 + hash01(i * 13 + 5) * 260, len = 5 + Math.floor(hash01(i * 3 + 2) * 11);
+      const x0 = (hash01(i * 31 + 7) * span + T * sp) % span, x = Math.round(dir < 0 ? W + 30 - x0 : x0 - 30);
+      const y = Math.round(playTop + 10 + hash01(i * 17 + 3) * hgt + x0 * 0.12);
+      const th = i % 5 === 0 ? 2 : 1; ctx.globalAlpha = (0.5 + 0.5 * hash01(i * 11 + 9)) * k; ctx.fillStyle = SOLAR_COLS[i & 3];
+      ctx.fillRect(dir < 0 ? x : x - len, y, len, th); ctx.globalAlpha *= 0.35; ctx.fillRect(dir < 0 ? x + len : x - len - 6, y, 6, 1); ctx.globalAlpha = k; ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, 2, th);
+    }
+    ctx.globalAlpha = 1;
+  }
+  function crackle(x, y, n, up) { for (let j = 0; j < n; j++) ctx.fillRect(x + ((j & 1) ? 1 : 0) - ((j & 2) ? 1 : 0), y - j * up, 1, 1); }
+  function drawSolarSparks(sx) { // static crackling on the lunar ground and on Decicat
+    const k = solarK(), f = Math.floor(bgT * 15);
+    for (let i = 0; i < 8; i++) {
+      if (hash01(f * 6 + i) > 0.65 * k) continue;
+      ctx.fillStyle = i & 1 ? '#bff8ff' : '#e0ccff';
+      crackle(Math.round(hash01(f * 9 + i * 3 + 1) * W), baseY - 6 - Math.round(hash01(f * 7 + i) * 34), 4 + (i % 3), 1);
+    }
+    if (cat.dead) return;
+    const cx = Math.round(cat.x - sx), cy = Math.round(cat.y);
+    for (let i = 0; i < 4; i++) {
+      if (hash01(f * 3 + i + 101) > 0.8 * k) continue;
+      const a = hash01(f * 5 + i + 7) * Math.PI * 2, r = 11 + hash01(f + i * 13) * 5;
+      const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy - 13 * grav + Math.sin(a) * r * 0.9);
+      ctx.fillStyle = 'rgba(160,250,255,0.30)'; ctx.fillRect(x - 2, y - 5, 5, 8);
+      ctx.fillStyle = i === 1 ? '#ffffff' : '#9ffcff'; crackle(x, y + 2, 6, 1);
+    }
   }
   function drawCat(x, y) {
     if (grav < 0 && !cat.dead) { // upside down (FLASH CRASH)
@@ -1928,7 +1969,10 @@
       ctx.fillStyle = '#140b26'; ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
       for (let i = 0; i < 3; i++) { ctx.fillStyle = i < boss.hp ? (boss.flash > 0 ? '#ffffff' : '#d9584e') : '#3a2030'; ctx.fillRect(bx + i * 22, by, 20, 5); if (i < boss.hp) { ctx.fillStyle = '#ff9a8a'; ctx.fillRect(bx + i * 22, by, 20, 1); } }
     }
-    if (gustT > 0 && Math.floor(bgT * 6) % 2 === 0) text(gust < 0 ? '<< GUST' : 'GUST >>', W / 2, playTop + 30, '#cfd6ff', { align: 'center', shadow: '#0b0f22' });
+    if (gustT > 0 && Math.floor(bgT * 6) % 2 === 0) {
+      if (ztype(zone) === 12) text(gust < 0 ? '<< SOLAR WIND' : 'SOLAR WIND >>', W / 2, playTop + 30, '#9ffcff', { align: 'center', shadow: '#1a0b3a' }); // no air on the moon: charged particles from the Sun
+      else text(gust < 0 ? '<< GUST' : 'GUST >>', W / 2, playTop + 30, '#cfd6ff', { align: 'center', shadow: '#0b0f22' });
+    }
     // active power-ups: icon + draining timer bar
     let hx = 4; const hy = 24;
     const pwHud = (k, f) => { ctx.fillStyle = '#140b26'; ctx.fillRect(hx - 1, hy - 1, 11, 11); ctx.drawImage(S.pw[k], hx, hy); if (f !== null) { ctx.fillStyle = '#140b26'; ctx.fillRect(hx - 1, hy + 10, 11, 3); ctx.fillStyle = PW[k].col; ctx.fillRect(hx, hy + 11, Math.max(1, Math.round(9 * f)), 1); } hx += 13; };
