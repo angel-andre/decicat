@@ -178,16 +178,25 @@ DECICAT is plain JavaScript with no frameworks and no runtime dependencies.
 
 **Single-file build.** `build.mjs` inlines every script into `dist/decicat.html`, one self-contained file that the Worker serves and that also works offline straight from disk.
 
+![Architecture diagram](docs/diagrams/architecture.png)
+
+<details>
+<summary>Diagram source (Mermaid)</summary>
+
 ```mermaid
+%% title: ARCHITECTURE
+%% subtitle: One Cloudflare Worker serves the game, the X player card and the leaderboard API
 flowchart LR
-  P[Player's browser] -->|/play| W[Cloudflare Worker]
-  X[X post] -->|player card| W
-  W -->|/embed| G[dist/decicat.html]
-  G -->|scores and replays| W
-  W --> DO[(Leaderboard Durable Object<br/>SQLite)]
-  V[tools/verify.mjs] -->|admin API| W
-  V -->|replays the run| G
+  P["📱 Player's browser"] -->|"/play"| W["☁️ Cloudflare Worker"]:::accent
+  X["𝕏 X post"] -->|"player card"| W
+  W -->|"/embed"| G["🐱 dist/decicat.html<br/>single file"]
+  G -->|"scores + replays"| W
+  W -->|"exact ranks"| DO[("🗄️ Leaderboard<br/>Durable Object · SQLite")]:::store
+  V["🛠️ tools/verify.mjs"] -->|"admin API"| W
+  V -.->|"replays the run"| G
 ```
+
+</details>
 
 ## Project layout
 

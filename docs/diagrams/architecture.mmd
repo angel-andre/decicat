@@ -1,0 +1,10 @@
+%% title: ARCHITECTURE
+%% subtitle: One Cloudflare Worker serves the game, the X player card and the leaderboard API
+flowchart LR
+  P["📱 Player's browser"] -->|"/play"| W["☁️ Cloudflare Worker"]:::accent
+  X["𝕏 X post"] -->|"player card"| W
+  W -->|"/embed"| G["🐱 dist/decicat.html<br/>single file"]
+  G -->|"scores + replays"| W
+  W -->|"exact ranks"| DO[("🗄️ Leaderboard<br/>Durable Object · SQLite")]:::store
+  V["🛠️ tools/verify.mjs"] -->|"admin API"| W
+  V -.->|"replays the run"| G
